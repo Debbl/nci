@@ -96,7 +96,12 @@ pub fn run(func: Runner, args: Vec<String>, options: &mut DetectOptions) {
     let command = get_cli_command(func, args.clone(), options.clone());
 
     if let Some((agent, args)) = command {
-        execa_command(&agent, Some(args)).unwrap()
+        println!(
+            "{} {}",
+            style("Running:").dim(),
+            style(format!("{} {}", agent, args.join(" "))).green()
+        );
+        execa_command(&agent, Some(args)).unwrap();
     } else {
         return;
     }
