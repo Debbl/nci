@@ -2,6 +2,9 @@
 name = "nci"
 version = "0.0.0"
 edition = "2021"
+authors = ["Brendan Dash <me@aiwan.run>"]
+description = "description"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
