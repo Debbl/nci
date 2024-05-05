@@ -37,3 +37,7 @@ path = "src/bin/nci.rs"
 [[bin]]
 name = "na"
 path = "src/bin/na.rs"
+
+[[bin]]
+name = "nlx"
+path = "src/bin/nlx.rs"
