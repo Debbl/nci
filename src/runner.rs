@@ -117,20 +117,20 @@ fn get_cli_command(
     if args.contains(&global) {
         return Some(func(get_global_agent(), args, None));
     }
-    let mut agent = DefaultAgent::Prompt;
+    let mut _agent = DefaultAgent::Prompt;
     if let Some(v) = detect(options.clone()) {
-        agent = DefaultAgent::Agent(v);
+        _agent = DefaultAgent::Agent(v);
     } else {
-        agent = get_default_agent(options.clone().programmatic);
+        _agent = get_default_agent(options.clone().programmatic);
     }
 
-    if agent == DefaultAgent::Prompt {
+    if _agent == DefaultAgent::Prompt {
         let items: Vec<&&str> = AGENT_MAP.keys().filter(|x| !x.contains("@")).collect();
         let selection = Select::new("script to run:", items).prompt();
         if let Ok(selection) = selection {
             let value = AGENT_MAP.get(selection);
             if let Some(value) = value {
-                agent = DefaultAgent::Agent(value.clone());
+                _agent = DefaultAgent::Agent(value.clone());
             } else {
                 return None;
             }
@@ -143,7 +143,7 @@ fn get_cli_command(
         has_lock: true,
         cwd: options.cwd,
     };
-    match agent {
+    match _agent {
         DefaultAgent::Agent(agent) => Some(func(agent, args, Some(runner_ctx))),
         DefaultAgent::Prompt => Some(func(Agent::Npm, args, Some(runner_ctx))),
     }
