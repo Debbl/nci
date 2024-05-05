@@ -77,7 +77,7 @@ pub fn run(func: Runner, args: Vec<String>, options: &mut DetectOptions) {
         return;
     }
     if args.len() == 1 && (args[0] == "-h" || args[0] == "--help") {
-        println!("npack use the right package manager v{}\n", version);
+        println!("nci use the right package manager v{}\n", version);
         println!("ni    -   install");
         println!("nr    -   run");
         println!("nlx   -   execute");
@@ -101,6 +101,7 @@ pub fn run(func: Runner, args: Vec<String>, options: &mut DetectOptions) {
             style("Running:").dim(),
             style(format!("{} {}", agent, args.join(" "))).green()
         );
+
         execa_command(&agent, Some(args)).unwrap();
     } else {
         return;
@@ -116,7 +117,6 @@ fn get_cli_command(
     if args.contains(&global) {
         return Some(func(get_global_agent(), args, None));
     }
-    #[allow(unused_assignments)]
     let mut agent = DefaultAgent::Prompt;
     if let Some(v) = detect(options.clone()) {
         agent = DefaultAgent::Agent(v);
