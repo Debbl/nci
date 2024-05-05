@@ -6,6 +6,10 @@ rewrite using Rust with [antfu-collective/ni](https://github.com/antfu-collectiv
 - [antfu-collective/ni](https://github.com/antfu-collective/ni)
 - [zhazhazhu/ni](https://github.com/zhazhazhu/ni)
 
+# install
+```bash
+cargo install nci
+```
 
 <hr />
 
