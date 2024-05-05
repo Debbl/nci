@@ -45,3 +45,7 @@ path = "src/bin/nlx.rs"
 [[bin]]
 name = "nu"
 path = "src/bin/nu.rs"
+
+[[bin]]
+name = "nun"
+path = "src/bin/nun.rs"
