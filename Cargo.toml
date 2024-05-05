@@ -1,6 +1,6 @@
 [package]
 name = "nci"
-version = "0.0.13"
+version = "0.0.14"
 edition = "2021"
 authors = ["Brendan Dash <me@aiwan.run>"]
 description = "description"
@@ -33,3 +33,7 @@ path = "src/bin/nr.rs"
 [[bin]]
 name = "nci"
 path = "src/bin/nci.rs"
+
+[[bin]]
+name = "na"
+path = "src/bin/na.rs"
