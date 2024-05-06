@@ -1,6 +1,6 @@
 # nci
 
-rewrite using Rust with [antfu-collective/ni](https://github.com/antfu-collective/ni)
+rewrited using Rust with [antfu-collective/ni](https://github.com/antfu-collective/ni)
 
 # inspiration
 - [antfu-collective/ni](https://github.com/antfu-collective/ni)
