@@ -89,6 +89,8 @@ fn main() {
 
                                     if let Ok(ans) = ans {
                                         args.push(ans.key);
+                                    } else {
+                                        process::exit(1)
                                     }
                                 }
                                 None => {}
@@ -112,6 +114,7 @@ fn main() {
                     dump(&storage).unwrap();
                 }
             };
+
             drop(storage_guard);
 
             let mut storage_guard = STORAGE.lock();
