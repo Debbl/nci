@@ -15,6 +15,19 @@ pub fn which_cmd(cmd: &str) -> bool {
     }
 }
 
+// https://blog.volta.sh/2020/11/25/command-spotlight-volta-run/
+pub fn get_volta_prefix() -> Result<(String, Vec<String>), ()> {
+    let volta_prefix = ("volta".to_string(), vec!["run".to_string()]);
+
+    let has_volta_command = which_cmd("volta");
+
+    if has_volta_command {
+        Ok(volta_prefix)
+    } else {
+        Err(())
+    }
+}
+
 pub fn get_package_json(path: &str) -> Package {
     let path = Path::new(&path);
     if path.exists() && path.is_file() {
