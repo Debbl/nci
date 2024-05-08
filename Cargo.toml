@@ -7,7 +7,7 @@ description = "Use the right package manager"
 license = "MIT"
 homepage = "https://github.com/Debbl/nci"
 repository = "https://github.com/Debbl/nci.git"
-keywords = ["package-manager", "cli", "rust", "npm", "pnpm", "yarn", "bun"]
+keywords = ["cli", "npm", "pnpm", "yarn", "bun"]
 readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
