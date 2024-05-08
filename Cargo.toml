@@ -1,6 +1,6 @@
 [package]
 name = "nci"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Brendan Dash <me@aiwan.run>"]
 description = "Use the right package manager"
