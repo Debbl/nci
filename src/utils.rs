@@ -3,8 +3,11 @@ use which::which;
 
 use crate::detect::Package;
 
-pub fn exclude<T: PartialEq + Clone>(arr: &[T], v: T) -> Vec<T> {
-    arr.iter().cloned().filter(|item| *item != v).collect()
+pub fn exclude<T: PartialEq + Clone>(arr: &[T], values: &[T]) -> Vec<T> {
+    arr.iter()
+        .cloned()
+        .filter(|item| !values.contains(item))
+        .collect()
 }
 
 pub fn which_cmd(cmd: &str) -> bool {

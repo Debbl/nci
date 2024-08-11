@@ -28,7 +28,11 @@ pub fn parse_ni(agent: Agent, args: Vec<String>, ctx: Option<RunnerContext>) -> 
             .collect::<Vec<String>>();
     };
     if args.contains(&GLOBAL.into()) {
-        return get_command(&agent, AgentCommand::Global, exclude(&args, GLOBAL.into()));
+        return get_command(
+            &agent,
+            AgentCommand::Global,
+            exclude(&args, &[GLOBAL.to_string()]),
+        );
     }
     if args.contains(&FROZEN_IF_PRESENT.into()) {
         if let Some(ctx) = ctx {
@@ -36,18 +40,22 @@ pub fn parse_ni(agent: Agent, args: Vec<String>, ctx: Option<RunnerContext>) -> 
                 return get_command(
                     &agent,
                     AgentCommand::Frozen,
-                    exclude(&args, FROZEN_IF_PRESENT.into()),
+                    exclude(&args, &[FROZEN_IF_PRESENT.to_string()]),
                 );
             }
         }
         return get_command(
             &agent,
             AgentCommand::Install,
-            exclude(&args, FROZEN_IF_PRESENT.into()),
+            exclude(&args, &[FROZEN_IF_PRESENT.to_string()]),
         );
     }
     if args.contains(&FROZEN.into()) {
-        return get_command(&agent, AgentCommand::Frozen, exclude(&args, FROZEN.into()));
+        return get_command(
+            &agent,
+            AgentCommand::Frozen,
+            exclude(&args, &[FROZEN.to_string()]),
+        );
     }
     if args.len() == 0 || args.iter().all(|item| item.starts_with("-")) {
         return get_command(&agent, AgentCommand::Install, args.clone());
@@ -62,7 +70,11 @@ pub fn parse_nr(agent: Agent, mut args: Vec<String>) -> CommandTuple {
     }
     if !args.is_empty() && args.contains(&IF_PRESENT.into()) {
         args[0] = format!("--if-present {}", args[0]);
-        return get_command(&agent, AgentCommand::Run, exclude(&args, IF_PRESENT.into()));
+        return get_command(
+            &agent,
+            AgentCommand::Run,
+            exclude(&args, &[IF_PRESENT.to_string()]),
+        );
     }
     if !args.is_empty() {
         if args.len() > 1 {}
@@ -76,7 +88,7 @@ pub fn parse_nun(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> C
         return get_command(
             &agent,
             AgentCommand::GlobalUninstall,
-            exclude(&args, GLOBAL.into()),
+            exclude(&args, &[GLOBAL.to_string()]),
         );
     }
     return get_command(&agent, AgentCommand::Uninstall, args);
@@ -91,7 +103,7 @@ pub fn parse_nu(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> Co
         return get_command(
             &agent,
             AgentCommand::UpgradeInteractive,
-            exclude(&args, "-i".into()),
+            exclude(&args, &["-i".to_string()]),
         );
     }
     get_command(&agent, AgentCommand::Upgrade, args)
