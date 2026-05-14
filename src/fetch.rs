@@ -7,6 +7,18 @@ use termion::terminal_size;
 
 use crate::utils::{supports_hyperlink, terminal_link};
 
+/// Fetch the latest published version of `pkg` from the npm registry. Returns
+/// a caret range (e.g. `^18.3.1`) ready to drop into a manifest.
+pub async fn fetch_latest_version(pkg: &str) -> Result<String, Box<dyn Error>> {
+    let url = format!("https://registry.npmjs.org/{}/latest", pkg);
+    let resp: serde_json::Value = reqwest::get(&url).await?.json().await?;
+    let version = resp
+        .get("version")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("missing `version` field in npm response for {}", pkg))?;
+    Ok(format!("^{}", version))
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct PackageLinks {
     npm: String,

@@ -2,7 +2,10 @@ use std::{process, vec};
 
 use console::style;
 use inquire::{Select, Text};
-use nci::{fetch::fetch_npm_packages, parse::parse_ni, runner::run_cli, utils::exclude};
+use nci::{
+    catalog::handler::handle_catalog_install, fetch::fetch_npm_packages, parse::parse_ni,
+    runner::run_cli, utils::exclude,
+};
 use tokio::runtime::Runtime;
 
 fn main() {
@@ -71,6 +74,15 @@ fn main() {
                 };
 
                 args.extend(vec![dependency.to_string(), mode.to_string()]);
+            }
+
+            // Catalog mode (pnpm only): intercept before normal add. If the
+            // handler returns Some, it has already mutated package.json /
+            // pnpm-workspace.yaml; just run the install/add it suggests.
+            if !args.iter().any(|a| a == "-g") {
+                if let Some(cmd) = handle_catalog_install(&agent, &args, ctx.as_ref()) {
+                    return cmd;
+                }
             }
 
             parse_ni(agent, args, ctx)

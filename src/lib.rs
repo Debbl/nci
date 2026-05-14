@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod catalog;
 pub mod completion;
 pub mod config;
 pub mod detect;
