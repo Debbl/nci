@@ -1,6 +1,5 @@
 use console::style;
 use inquire::Select;
-use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
 use std::{env, io};
@@ -141,6 +140,18 @@ pub fn run(func: Runner, args: Vec<String>, options: &mut DetectOptions) {
         return;
     }
 
+    // Apply -C: enter options.cwd so subsequent detection and the eventual
+    // spawned process all see the same directory. Closures may chdir again
+    // for finer-grained changes (e.g. `nr -p` selecting a workspace package).
+    if let Err(e) = env::set_current_dir(&options.cwd) {
+        eprintln!(
+            "[ni] couldn't enter {}: {}",
+            options.cwd.display(),
+            e
+        );
+        process::exit(1);
+    }
+
     let command = get_cli_command(func, args, options.clone());
 
     if let Some((mut agent, mut args)) = command {
@@ -275,23 +286,25 @@ fn get_cli_command(
 }
 
 pub fn execa_command(agent: &str, args: Option<Vec<String>>) -> Result<(), io::Error> {
-    let mut command = Command::new(agent)
+    let status = Command::new(agent)
         .args(args.unwrap_or_default())
+        .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
-        .expect("Failed to execute command");
+        .map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("failed to spawn `{}`: {}", agent, e),
+            )
+        })?
+        .wait()?;
 
-    if let Some(stdout) = command.stdout.take() {
-        let reader = io::BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                println!("{}", line);
-            }
-        }
+    // Propagate the agent's exit code so CI / shell scripts can react to
+    // failure. Without this, `nci` would always exit 0 even when npm fails.
+    if !status.success() {
+        process::exit(status.code().unwrap_or(1));
     }
-
-    command.wait()?;
 
     Ok(())
 }

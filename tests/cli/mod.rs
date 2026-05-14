@@ -113,6 +113,54 @@ fn change_directory_consumes_two_args() {
 }
 
 #[test]
+fn dash_c_to_nonexistent_dir_errors_cleanly() {
+    // Trying to enter a directory that doesn't exist should fail with a
+    // readable message instead of a confusing spawn error from npm/etc.
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_nci"));
+    clean_env(&mut cmd);
+    let out = cmd
+        .args(["-C", "/this/path/does/not/exist/__nci_test__", "?"])
+        .output()
+        .expect("spawn nci");
+    assert!(!out.status.success(), "expected non-zero exit");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("couldn't enter"),
+        "expected helpful stderr, got: {stderr}"
+    );
+}
+
+#[test]
+fn dash_c_runs_command_in_target_dir() {
+    if which::which("volta").is_ok() {
+        eprintln!("skipping: volta is installed");
+        return;
+    }
+    // -C should chdir before detection AND before the spawned command runs.
+    // We can verify the chdir indirectly: dry-run nci against a target that
+    // has a pnpm-lock.yaml. Detection should resolve `pnpm`, proving -C took
+    // effect.
+    let outer = TempDir::new().unwrap();
+    let inner = outer.path().join("project");
+    fs::create_dir(&inner).unwrap();
+    fs::write(inner.join("pnpm-lock.yaml"), "").unwrap();
+    fs::write(inner.join("package.json"), r#"{"name":"x"}"#).unwrap();
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_ni"));
+    clean_env(&mut cmd);
+    let out = cmd
+        .args(["-C", "project", "?", "vite"])
+        .current_dir(outer.path())
+        .output()
+        .expect("spawn ni");
+    assert!(out.status.success(), "stderr: {:?}", out.stderr);
+    // pnpm add vite is what we expect; the agent name proves -C
+    // resolved detection inside `project/`, and the dry-run command would
+    // have spawned there too.
+    assert_eq!(stdout(&out), "pnpm add vite");
+}
+
+#[test]
 fn help_lists_nd_and_nup() {
     let dir = TempDir::new().unwrap();
     let out = run_na_in(dir.path(), &["--help"]);
