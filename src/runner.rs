@@ -262,7 +262,12 @@ fn get_cli_command(
 
     if _agent == DefaultAgent::Prompt {
         let items: Vec<&&str> = AGENT_MAP.keys().filter(|x| !x.contains("@")).collect();
-        let selection = Select::new("Choose the agent", items).prompt();
+        let filter = |input: &str, opt: &&&str, _opt_str: &str, _idx: usize| -> bool {
+            crate::fuzzy::matches(input, opt)
+        };
+        let selection = Select::new("Choose the agent", items)
+            .with_filter(&filter)
+            .prompt();
         if let Ok(selection) = selection {
             let value = AGENT_MAP.get(selection);
             if let Some(value) = value {

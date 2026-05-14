@@ -3,7 +3,7 @@ use std::{process, vec};
 use console::style;
 use inquire::{Select, Text};
 use nci::{
-    catalog::handler::handle_catalog_install, fetch::fetch_npm_packages, parse::parse_ni,
+    catalog::handler::handle_catalog_install, fetch::fetch_npm_packages, fuzzy, parse::parse_ni,
     runner::run_cli, utils::exclude,
 };
 use tokio::runtime::Runtime;
@@ -42,9 +42,13 @@ fn main() {
                 };
 
                 // select package
+                let filter = |input: &str, opt: &String, _opt_str: &str, _idx: usize| -> bool {
+                    fuzzy::matches(input, opt)
+                };
                 let dependency = Select::new("choose a package to install", {
                     packages.iter().map(|pkg| pkg.value.name.clone()).collect()
                 })
+                .with_filter(&filter)
                 .prompt();
                 let dependency = match dependency {
                     Ok(dependency) => dependency,

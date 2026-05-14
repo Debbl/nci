@@ -150,7 +150,7 @@ nr dev --port=3000
 ```bash
 nr
 
-# interactive picker
+# interactive picker (fzf-style fuzzy filtering)
 # supports https://www.npmjs.com/package/npm-scripts-info convention
 ```
 

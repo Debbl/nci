@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::utils::get_package_json;
+use crate::{fuzzy, utils::get_package_json};
 
 /// Bash completion script. Source via `nr --completion-bash >> ~/.bashrc`.
 pub const RAW_BASH_COMPLETION_SCRIPT: &str = r#"
@@ -49,8 +49,9 @@ end
 complete -c nr -f -a '(_nr_completion)' -d 'package.json scripts'
 "#;
 
-/// Return script-name suggestions for the prefix being typed, in
-/// `package.json` order. `prefix=""` means "show all".
+/// Return script-name suggestions ranked by fuzzy score against `prefix`.
+/// Empty prefix preserves `package.json` order. Non-matching scripts are
+/// dropped.
 pub fn completion_suggestions(cwd: &Path, prefix: &str) -> Vec<String> {
     let pkg_path = cwd.join("package.json");
     let pkg = get_package_json(&pkg_path.to_string_lossy());
@@ -62,11 +63,5 @@ pub fn completion_suggestions(cwd: &Path, prefix: &str) -> Vec<String> {
         .map(|(k, _)| k)
         .collect();
 
-    if prefix.is_empty() {
-        return keys;
-    }
-    let lower = prefix.to_lowercase();
-    keys.into_iter()
-        .filter(|k| k.to_lowercase().contains(&lower))
-        .collect()
+    fuzzy::sort_by_score(prefix, keys, |s| s.as_str())
 }

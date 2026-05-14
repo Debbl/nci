@@ -666,6 +666,7 @@ dependencies = [
  "indexmap",
  "inquire",
  "lazy_static",
+ "nucleo-matcher",
  "parking_lot",
  "reqwest",
  "rust-ini",
@@ -685,6 +686,16 @@ version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f71d09d5c87634207f894c6b31b6a2b2c64ea3bdcf71bd5599fdbbe1600c00f"
 dependencies = [
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "nucleo-matcher"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf33f538733d1a5a3494b836ba913207f14d9d4a1d3cd67030c5061bdd2cac85"
+dependencies = [
+ "memchr",
  "unicode-segmentation",
 ]
 

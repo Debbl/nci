@@ -34,10 +34,25 @@ fn filters_by_prefix_substring() {
 }
 
 #[test]
-fn filter_is_case_insensitive() {
+fn smart_case_matches() {
     let dir = write_pkg(&[("Dev", "vite"), ("build", "vite build")]);
-    let suggestions = completion_suggestions(dir.path(), "DEV");
-    assert_eq!(suggestions, vec!["Dev"]);
+    // Lowercase needle → case-insensitive (fzf smart-case): matches "Dev".
+    assert_eq!(completion_suggestions(dir.path(), "dev"), vec!["Dev"]);
+    // Uppercase needle → case-sensitive: "DEV" doesn't match "Dev".
+    assert!(completion_suggestions(dir.path(), "DEV").is_empty());
+}
+
+#[test]
+fn ranks_better_matches_first() {
+    // With fuzzy ranking, an exact-substring match outranks one with leading
+    // junk, even though both contain the needle.
+    let dir = write_pkg(&[
+        ("build:dev", "vite build --mode dev"),
+        ("dev", "vite"),
+        ("test", "vitest"),
+    ]);
+    let suggestions = completion_suggestions(dir.path(), "dev");
+    assert_eq!(suggestions.first().unwrap(), "dev");
 }
 
 #[test]

@@ -10,7 +10,8 @@ use nci::{
         RAW_ZSH_COMPLETION_SCRIPT,
     },
     config::{get_run_agent, RunAgent},
-    monorepo::load_packages,
+    fuzzy,
+    monorepo::{load_packages, PackageEntry},
     parse::parse_nr,
     runner::run_cli,
     storage::{dump, load, STORAGE},
@@ -104,7 +105,17 @@ fn main() {
                 let selected = if pkgs.len() == 1 {
                     pkgs.remove(0)
                 } else {
-                    match Select::new("select a package", pkgs).prompt() {
+                    let filter = |input: &str,
+                                  opt: &PackageEntry,
+                                  _opt_str: &str,
+                                  _idx: usize|
+                     -> bool {
+                        fuzzy::matches(input, &opt.name)
+                    };
+                    match Select::new("select a package", pkgs)
+                        .with_filter(&filter)
+                        .prompt()
+                    {
                         Ok(p) => p,
                         Err(_) => process::exit(1),
                     }
@@ -171,7 +182,20 @@ fn main() {
                                         };
                                     }
 
-                                    let ans = Select::new("script to run:", raw).prompt();
+                                    // fuzzy filter against `key + description`,
+                                    // matching upstream's fzf selector.
+                                    let filter = |input: &str,
+                                                  opt: &ScriptRaw,
+                                                  _opt_str: &str,
+                                                  _idx: usize|
+                                     -> bool {
+                                        let combined =
+                                            format!("{} {}", opt.key, opt.description);
+                                        fuzzy::matches(input, &combined)
+                                    };
+                                    let ans = Select::new("script to run:", raw)
+                                        .with_filter(&filter)
+                                        .prompt();
 
                                     if let Ok(ans) = ans {
                                         args.push(ans.key);

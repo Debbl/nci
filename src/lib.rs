@@ -4,6 +4,7 @@ pub mod completion;
 pub mod config;
 pub mod detect;
 pub mod fetch;
+pub mod fuzzy;
 pub mod monorepo;
 pub mod parse;
 pub mod runner;

@@ -5,6 +5,7 @@ use console::style;
 use inquire::{Select, Text};
 
 use super::CatalogConfig;
+use crate::fuzzy;
 
 /// Pick a catalog for `pkg`. Behaviour mirrors upstream:
 ///
@@ -29,7 +30,13 @@ pub fn prompt_select_catalog(
     choices.push("[skip — install without catalog]".to_string());
 
     let message = format!("select catalog for {}", style(pkg).yellow());
-    let chosen = Select::new(&message, choices.clone()).prompt().ok()?;
+    let filter = |input: &str, opt: &String, _opt_str: &str, _idx: usize| -> bool {
+        fuzzy::matches(input, opt)
+    };
+    let chosen = Select::new(&message, choices.clone())
+        .with_filter(&filter)
+        .prompt()
+        .ok()?;
 
     if chosen.starts_with("[skip") {
         return None;

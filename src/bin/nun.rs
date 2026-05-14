@@ -3,6 +3,7 @@ use std::{env, process};
 use console::style;
 use inquire::MultiSelect;
 use nci::{
+    fuzzy,
     parse::parse_nun,
     runner::run_cli,
     utils::{exclude, get_package_json},
@@ -58,7 +59,12 @@ fn main() {
                     process::exit(1);
                 }
 
-                let selection = MultiSelect::new("remove dependencies", all_deps).prompt();
+                let filter = |input: &str, opt: &DepChoice, _opt_str: &str, _idx: usize| -> bool {
+                    fuzzy::matches(input, &opt.name)
+                };
+                let selection = MultiSelect::new("remove dependencies", all_deps)
+                    .with_filter(&filter)
+                    .prompt();
                 let selected = match selection {
                     Ok(s) => s,
                     Err(_) => process::exit(1),
