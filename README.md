@@ -1,37 +1,27 @@
 # nci
 
-rewrited using Rust with [antfu-collective/ni](https://github.com/antfu-collective/ni)
+A Rust port of [antfu-collective/ni](https://github.com/antfu-collective/ni).
 
-# credits
-- [antfu-collective/ni](https://github.com/antfu-collective/ni)
-- [zhazhazhu/ni](https://github.com/zhazhazhu/ni)
+**nci** — use the right package manager.
 
-# install
+<a href='https://docs.npmjs.com/cli/v6/commands/npm'>npm</a> · <a href='https://yarnpkg.com'>yarn</a> · <a href='https://pnpm.io/'>pnpm</a> · <a href='https://bun.sh/'>bun</a> · <a href='https://deno.land/'>deno</a>
+
+## Install
+
 ```bash
 cargo install nci
 ```
 
-<hr />
+This installs eight binaries: `ni`, `nr`, `nlx`, `nup`, `nun`, `nci`, `nd`, `na` (plus `nu` as a legacy alias for `nup`).
 
-# ni
+## Credits
 
-~~*`npm i` in a yarn project, again? F\*\*k!*~~
+- [antfu-collective/ni](https://github.com/antfu-collective/ni)
+- [zhazhazhu/ni](https://github.com/zhazhazhu/ni)
 
-**ni** - use the right package manager
+---
 
-<br>
-
-```
-npm i -g @antfu/ni
-```
-
-<a href='https://docs.npmjs.com/cli/v6/commands/npm'>npm</a> · <a href='https://yarnpkg.com'>yarn</a> · <a href='https://pnpm.io/'>pnpm</a> · <a href='https://bun.sh/'>bun</a>
-
-
-<br>
-
-
-### `ni` - install
+### `ni` — install
 
 ```bash
 ni
@@ -40,6 +30,7 @@ ni
 # yarn install
 # pnpm install
 # bun install
+# deno install
 ```
 
 ```bash
@@ -49,6 +40,7 @@ ni vite
 # yarn add vite
 # pnpm add vite
 # bun add vite
+# deno add vite
 ```
 
 ```bash
@@ -58,6 +50,17 @@ ni @types/node -D
 # yarn add @types/node -D
 # pnpm add -D @types/node
 # bun add -d @types/node
+# deno add -D @types/node
+```
+
+```bash
+ni -P
+
+# npm i --omit=dev
+# yarn install --production
+# pnpm i --production
+# bun install --production
+# (deno not supported)
 ```
 
 ```bash
@@ -66,8 +69,9 @@ ni --frozen
 # npm ci
 # yarn install --frozen-lockfile (Yarn 1)
 # yarn install --immutable (Yarn Berry)
-# pnpm install --frozen-lockfile
-# bun install --no-save
+# pnpm i --frozen-lockfile
+# bun install --frozen-lockfile
+# deno install --frozen
 ```
 
 ```bash
@@ -77,13 +81,61 @@ ni -g eslint
 # yarn global add eslint (Yarn 1)
 # pnpm add -g eslint
 # bun add -g eslint
+# deno install -g eslint
 
-# this uses default agent, regardless your current working directory
+# uses the global agent, regardless of your current working directory
 ```
+
+```bash
+ni -i
+
+# interactively search the npm registry and pick a package to install
+```
+
+<details>
+<summary>pnpm catalogs</summary>
+
+When a pnpm workspace declares [catalogs](https://pnpm.io/catalogs) in `pnpm-workspace.yaml`, `nci` writes `catalog:` references into `package.json` instead of pinning versions:
+
+```bash
+# pnpm-workspace.yaml:
+#   catalog:
+#     react: ^18.3.0
+
+ni react
+# → detects react in the default catalog
+# → writes "react": "catalog:" to package.json
+# → runs `pnpm i`
+
+ni lodash
+# → lodash isn't in any catalog
+# → with only a default catalog: silently adds to it
+# → with multiple named catalogs: prompts for a catalog (or skip / create new)
+# → fetches latest from the npm registry, updates pnpm-workspace.yaml
+# → writes "lodash": "catalog:..." to package.json
+# → runs `pnpm i`
+```
+
+The dependency flag picks the right `package.json` section:
+
+```bash
+ni typescript -D
+# → writes "typescript": "catalog:dev" to devDependencies
+```
+
+`-w` / `--workspace` targets the workspace root's `package.json`:
+
+```bash
+ni react -w
+```
+
+To disable catalog mode, set `catalog=false` in `~/.nirc` or `NI_CATALOG=false`.
+
+</details>
 
 <br>
 
-### `nr` - run
+### `nr` — run
 
 ```bash
 nr dev --port=3000
@@ -92,12 +144,13 @@ nr dev --port=3000
 # yarn run dev --port=3000
 # pnpm run dev --port=3000
 # bun run dev --port=3000
+# deno task dev --port=3000
 ```
 
 ```bash
 nr
 
-# interactively select the script to run
+# interactive picker
 # supports https://www.npmjs.com/package/npm-scripts-info convention
 ```
 
@@ -107,9 +160,37 @@ nr -
 # rerun the last command
 ```
 
+```bash
+nr -p
+nr -p dev
+
+# pick a workspace package (auto-selects when only one matches), then
+# run the script there
+```
+
+<details>
+<summary>shell completion</summary>
+
+```bash
+# bash
+nr --completion-bash >> ~/.bashrc
+
+# zsh — for example with zim:fw
+mkdir -p ~/.zim/custom/ni-completions
+nr --completion-zsh > ~/.zim/custom/ni-completions/_ni
+echo "zmodule $HOME/.zim/custom/ni-completions --fpath ." >> ~/.zimrc
+zimfw install
+
+# fish
+mkdir -p ~/.config/fish/completions
+nr --completion-fish > ~/.config/fish/completions/nr.fish
+```
+
+</details>
+
 <br>
 
-### `nlx` - download & execute
+### `nlx` — download & execute
 
 ```bash
 nlx vitest
@@ -117,35 +198,41 @@ nlx vitest
 # npx vitest
 # yarn dlx vitest
 # pnpm dlx vitest
-# bunx vitest
+# bun x vitest
+# deno x vitest
 ```
 
 <br>
 
-### `nu` - upgrade
+### `nup` — upgrade
 
 ```bash
-nu
+nup
 
-# npm upgrade
+# npm update
 # yarn upgrade (Yarn 1)
 # yarn up (Yarn Berry)
 # pnpm update
 # bun update
+# deno outdated --update
 ```
 
 ```bash
-nu -i
+nup -i
 
-# (not available for npm & bun)
+# (not available on npm)
 # yarn upgrade-interactive (Yarn 1)
 # yarn up -i (Yarn Berry)
 # pnpm update -i
+# bun update -i
+# deno outdated --update
 ```
+
+> Earlier versions of nci shipped this command as `nu`. The `nu` binary is still installed as a deprecated alias to keep old scripts working; new shells should use `nup` (matching upstream's rename away from a clash with Nushell).
 
 <br>
 
-### `nun` - uninstall
+### `nun` — uninstall
 
 ```bash
 nun webpack
@@ -154,6 +241,13 @@ nun webpack
 # yarn remove webpack
 # pnpm remove webpack
 # bun remove webpack
+# deno remove webpack
+```
+
+```bash
+nun
+
+# interactively multi-select dependencies to remove
 ```
 
 ```bash
@@ -163,26 +257,43 @@ nun -g silent
 # yarn global remove silent
 # pnpm remove -g silent
 # bun remove -g silent
+# deno uninstall -g silent
 ```
 
 <br>
 
-### `nci` - clean install
+### `nci` — clean install
 
 ```bash
 nci
 
 # npm ci
 # yarn install --frozen-lockfile
-# pnpm install --frozen-lockfile
-# bun install --no-save
+# pnpm i --frozen-lockfile
+# bun install --frozen-lockfile
+# deno install --frozen
 ```
 
-if the corresponding node manager is not present, this command will install it globally along the way.
+If the detected agent isn't installed, `nci` will offer to globally install it for you (or just do it when `NI_AUTO_INSTALL=true`).
 
 <br>
 
-### `na` - agent alias
+### `nd` — dedupe dependencies
+
+```bash
+nd
+
+# npm dedupe
+# yarn dedupe (Yarn Berry only — Yarn 1 doesn't support it)
+# pnpm dedupe
+# (bun / deno not supported)
+```
+
+`nd -c` rewrites to `--check` on pnpm and `--dry-run` on npm — both ways to preview without writing.
+
+<br>
+
+### `na` — agent alias
 
 ```bash
 na
@@ -191,6 +302,7 @@ na
 # yarn
 # pnpm
 # bun
+# deno
 ```
 
 ```bash
@@ -200,24 +312,31 @@ na run foo
 # yarn run foo
 # pnpm run foo
 # bun run foo
+# deno run foo
 ```
 
 <br>
 
-### Global Flags
+### Global flags
 
 ```bash
-# ?               | Print the command execution depends on the agent
+# ?               | dry-run: print the resolved command and exit
 ni vite ?
 
-# -C              | Change directory before running the command
+# -C              | change directory before running anything
 ni -C packages/foo vite
 nr -C playground dev
 
-# -v, --version   | Show version number
+# --agent         | print the detected agent name (for shell scripts)
+nci --agent          # prints "pnpm", "npm", "deno", or "unknown"
+
+# --programmatic  | suppress prompts and the "Running:" banner
+ni react --programmatic
+
+# -v, --version   | show nci / node / detected agent / global agent versions
 ni -v
 
-# -h, --help      | Show help
+# -h, --help      | show help
 ni -h
 ```
 
@@ -228,25 +347,44 @@ ni -h
 ```ini
 ; ~/.nirc
 
-; fallback when no lock found
-defaultAgent=npm # default "prompt"
+; fallback when no lock file is detected
+defaultAgent=npm                # default: "prompt"
 
-; for global installs
+; agent used for `-g` global installs
 globalAgent=npm
+
+; use `node --run <script>` instead of `<agent> run <script>` (requires Node 22+)
+runAgent=node
+
+; wrap every spawned command with `sfw <agent> <args>`
+useSfw=true
+
+; pnpm catalog support; set to false to opt out
+catalog=true
+
+; suppress the `nr` picker's behaviour of surfacing the last-run script
+noLastCommand=false
 ```
+
+Keys are also accepted in `snake_case` (`default_agent`, `global_agent`, …) for backward compatibility.
+
+Every option has a matching environment variable that takes precedence over `~/.nirc`:
 
 ```bash
-# ~/.bashrc
-
-# custom configuration file path
-export NI_CONFIG_FILE="$HOME/.config/ni/nirc"
+export NI_CONFIG_FILE="$HOME/.config/ni/nirc"   # alternate rc path
+export NI_DEFAULT_AGENT=pnpm
+export NI_GLOBAL_AGENT=npm
+export NI_RUN_AGENT=node
+export NI_USE_SFW=true
+export NI_CATALOG=false
+export NI_NO_LAST_COMMAND=true
+export NI_AUTO_INSTALL=true                     # auto `npm i -g` missing agents
 ```
 
-```ps
-# for Windows
+On Windows (PowerShell):
 
-# custom configuration file path in PowerShell accessible within the `$profile` path
-$Env:NI_CONFIG_FILE = 'C:\to\your\config\location'
+```powershell
+$Env:NI_CONFIG_FILE = 'C:\path\to\your\nirc'
 ```
 
 <br>
@@ -255,44 +393,44 @@ $Env:NI_CONFIG_FILE = 'C:\to\your\config\location'
 
 #### asdf
 
-You can also install ni via the [3rd-party asdf-plugin](https://github.com/CanRau/asdf-ni.git) maintained by [CanRau](https://github.com/CanRau)
+`ni` is available via the [3rd-party asdf-plugin](https://github.com/CanRau/asdf-ni.git) maintained by [CanRau](https://github.com/CanRau):
 
 ```bash
-# first add the plugin
 asdf plugin add ni https://github.com/CanRau/asdf-ni.git
-
-# then install the latest version
 asdf install ni latest
-
-# and make it globally available
 asdf global ni latest
 ```
 
+<br>
+
 ### How?
 
-**ni** assumes that you work with lockfiles (and you should)
+`nci` assumes you work with lockfiles. Before running, it inspects (in order of precedence):
 
-Before it runs, it will detect your `yarn.lock` / `pnpm-lock.yaml` / `package-lock.json` / `bun.lockb` to know current package manager (or `packageManager` field in your packages.json if specified), and runs the [corresponding commands](https://github.com/antfu/ni/blob/main/src/agents.ts).
+1. `deno.json` / `deno.jsonc` → deno
+2. `bun.lock` / `bun.lockb` → bun
+3. `pnpm-lock.yaml` → pnpm
+4. `yarn.lock` → yarn
+5. `package-lock.json` / `npm-shrinkwrap.json` → npm
+6. `packageManager` field in `package.json`
 
-### Trouble shooting
+`yarn@>1` is treated as Yarn Berry; `pnpm@<7` is treated as pnpm 6. The full command table lives in [`src/agents.rs`](src/agents.rs) and mirrors [`package-manager-detector`'s commands](https://github.com/antfu-collective/package-manager-detector/blob/main/src/commands.ts).
 
-#### Conflicts with PowerShell
+<br>
 
-PowerShell comes with a built-in alias `ni` for the `New-Item` cmdlet. To remove the alias in your current PowerShell session in favor of this package, use the following command:
+### Troubleshooting
 
-```PowerShell
-'Remove-Item Alias:ni -Force -ErrorAction Ignore'
+#### Conflicts with PowerShell's `ni`
+
+PowerShell ships with a built-in alias `ni` for the `New-Item` cmdlet. Remove it in the current session:
+
+```powershell
+Remove-Item Alias:ni -Force -ErrorAction Ignore
 ```
 
-If you want to persist the changes, you can add them to your PowerShell profile. The profile path is accessible within the `$profile` variable. The ps1 profile file can normally be found at
+To persist, drop the same line into your PowerShell profile (`$PROFILE`):
 
-- PowerShell 5 (Windows PowerShell): `C:\Users\USERNAME\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`
-- PowerShell 7: `C:\Users\USERNAME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1`
-- VSCode: `C:\Users\USERNAME\Documents\PowerShell\Microsoft.VSCode_profile.ps1`
-
-You can use the following script to remove the alias at shell start by adding the above command to your profile:
-
-```PowerShell
+```powershell
 if (-not (Test-Path $profile)) {
   New-Item -ItemType File -Path (Split-Path $profile) -Force -Name (Split-Path $profile -Leaf)
 }
@@ -304,12 +442,11 @@ if ($profileContent -notcontains $profileEntry) {
 }
 ```
 
-#### `nx` and `nix` is no longer available
+#### `nx` / `nix` / `nu`
 
-We renamed `nx`/`nix` to `nlx` to avoid conflicts with the other existing tools - [nx](https://nx.dev/) and [nix](https://nixos.org/). You can always alias them back on your shell configuration file (`.zshrc`, `.bashrc`, etc).
+Upstream renamed `nx`/`nix` to `nlx` (clashes with [nx](https://nx.dev/) and [nix](https://nixos.org/)) and `nu` to `nup` (clashes with [Nushell](https://www.nushell.sh/)). `nci` keeps `nu` as an alias for `nup`. For `nlx`, alias the others yourself if you prefer:
 
 ```bash
 alias nx="nlx"
-# or
 alias nix="nlx"
 ```
