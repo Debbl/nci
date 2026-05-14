@@ -3,6 +3,7 @@ use nci::{agents::Agent, parse::parse_nun};
 use crate::common::expect;
 
 pub mod bun;
+pub mod deno;
 pub mod npm;
 pub mod pnpm;
 pub mod yarn;

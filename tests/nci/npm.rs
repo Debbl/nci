@@ -1,17 +1,13 @@
-use nci::{agents::Agent, parse::parse_ni, runner::RunnerContext};
+use nci::agents::Agent;
+
+use super::nci;
 
 #[test]
-fn empty() {
-    let (agent, args) = parse_ni(
-        Agent::Npm,
-        vec!["--frozen-if-present".into()],
-        Some(RunnerContext {
-            programmatic: false,
-            has_lock: true,
-            cwd: std::env::current_dir().unwrap(),
-        }),
-    );
+fn with_lock() {
+    nci(Agent::Npm, true, "npm", &["ci"]);
+}
 
-    assert_eq!(agent, "npm");
-    assert_eq!(args, ["ci"])
+#[test]
+fn without_lock() {
+    nci(Agent::Npm, false, "npm", &["i"]);
 }

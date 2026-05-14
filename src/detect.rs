@@ -33,6 +33,7 @@ lazy_static! {
     pub static ref AGENT_MAP: IndexMap<&'static str, Agent> = {
         let mut m = IndexMap::new();
         m.insert("bun", Agent::Bun);
+        m.insert("deno", Agent::Deno);
         m.insert("pnpm", Agent::Pnpm);
         m.insert("pnpm@6", Agent::Pnpm6);
         m.insert("yarn", Agent::Yarn);
@@ -43,6 +44,7 @@ lazy_static! {
     pub static ref AGENT_INSTALL: IndexMap<Agent, &'static str> = {
         let mut m = IndexMap::new();
         m.insert(Agent::Bun, "https://bun.sh");
+        m.insert(Agent::Deno, "https://docs.deno.com/runtime/getting_started/installation/");
         m.insert(Agent::Pnpm, "https://pnpm.io/installation");
         m.insert(Agent::Pnpm6, "https://pnpm.io/6.x/installation");
         m.insert(Agent::Yarn, "https://classic.yarnpkg.com/en/docs/install");
@@ -143,7 +145,7 @@ pub fn detect(options: DetectOptions) -> Option<Agent> {
     }
 
     if let Some(agent) = &agent {
-        let cmd = which_cmd(&agent.as_str().split("@").collect::<Vec<&str>>()[0]);
+        let cmd = which_cmd(agent.exec());
         if cmd == false && options.programmatic == false {
             if options.auto_install == false {
                 println!(
@@ -176,12 +178,9 @@ pub fn detect(options: DetectOptions) -> Option<Agent> {
 
             let mut args: Vec<String> = vec!["i".into(), "-g".into()];
             if let Some(v) = version.clone() {
-                let agent = agent.as_str().split("@").collect::<Vec<&str>>()[0];
-                let agent = format!("{agent}@{v}");
-                args.push(agent);
+                args.push(format!("{}@{}", agent.exec(), v));
             } else {
-                let agent = format!("{}", agent.as_str());
-                args.push(agent);
+                args.push(agent.exec().to_string());
             }
             execa_command("npm", Some(args)).unwrap()
         }

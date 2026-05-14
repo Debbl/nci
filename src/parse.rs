@@ -1,7 +1,7 @@
 use std::process;
 
 use crate::{
-    agents::{Agent, AgentCommand, COMMAND},
+    agents::{Agent, AgentCommand, AgentCommandValue, Fragment},
     runner::RunnerContext,
     utils::exclude,
 };
@@ -13,20 +13,62 @@ const FROZEN_IF_PRESENT: &str = "--frozen-if-present";
 
 pub type CommandTuple = (String, Vec<String>);
 
+/// Splice user args into a command template. Returns `None` for unsupported
+/// commands (`AgentCommandValue::None`).
+pub fn construct(value: AgentCommandValue, args: &[String]) -> Option<CommandTuple> {
+    match value {
+        AgentCommandValue::None => None,
+        AgentCommandValue::Plain(frags) => {
+            let mut out: Vec<String> = Vec::new();
+            for f in frags {
+                match f {
+                    Fragment::Lit(s) => out.push((*s).to_string()),
+                    Fragment::Args => out.extend(args.iter().cloned()),
+                }
+            }
+            if out.is_empty() {
+                return None;
+            }
+            let cmd = out.remove(0);
+            Some((cmd, out))
+        }
+        AgentCommandValue::DashDash(agent, sub) => {
+            let mut rest: Vec<String> = vec![sub.to_string()];
+            if !args.is_empty() {
+                rest.push(args[0].clone());
+                if args.len() > 1 {
+                    rest.push("--".to_string());
+                    rest.extend(args[1..].iter().cloned());
+                }
+            }
+            Some((agent.to_string(), rest))
+        }
+    }
+}
+
+fn get_command(agent: &Agent, command: AgentCommand, args: Vec<String>) -> CommandTuple {
+    let value = agent.commands().get(command);
+    match construct(value, &args) {
+        Some(t) => t,
+        None => {
+            eprintln!(
+                "\u{2717} Command \"{:?}\" is not supported by agent \"{}\"",
+                command,
+                agent.as_str()
+            );
+            process::exit(1);
+        }
+    }
+}
+
 pub fn parse_ni(agent: Agent, args: Vec<String>, ctx: Option<RunnerContext>) -> CommandTuple {
     let mut args = args;
     if agent == Agent::Bun {
         args = args
             .iter()
-            .map(|i| {
-                if i == "-D" {
-                    "-d".to_string()
-                } else {
-                    i.to_string()
-                }
-            })
-            .collect::<Vec<String>>();
-    };
+            .map(|i| if i == "-D" { "-d".into() } else { i.clone() })
+            .collect();
+    }
     if args.contains(&GLOBAL.into()) {
         return get_command(
             &agent,
@@ -35,19 +77,16 @@ pub fn parse_ni(agent: Agent, args: Vec<String>, ctx: Option<RunnerContext>) -> 
         );
     }
     if args.contains(&FROZEN_IF_PRESENT.into()) {
-        if let Some(ctx) = ctx {
-            if ctx.has_lock == true {
-                return get_command(
-                    &agent,
-                    AgentCommand::Frozen,
-                    exclude(&args, &[FROZEN_IF_PRESENT.to_string()]),
-                );
-            }
-        }
+        let cleaned = exclude(&args, &[FROZEN_IF_PRESENT.to_string()]);
+        let has_lock = ctx.as_ref().map(|c| c.has_lock).unwrap_or(false);
         return get_command(
             &agent,
-            AgentCommand::Install,
-            exclude(&args, &[FROZEN_IF_PRESENT.to_string()]),
+            if has_lock {
+                AgentCommand::Frozen
+            } else {
+                AgentCommand::Install
+            },
+            cleaned,
         );
     }
     if args.contains(&FROZEN.into()) {
@@ -57,41 +96,38 @@ pub fn parse_ni(agent: Agent, args: Vec<String>, ctx: Option<RunnerContext>) -> 
             exclude(&args, &[FROZEN.to_string()]),
         );
     }
-    if args.len() == 0 || args.iter().all(|item| item.starts_with("-")) {
-        return get_command(&agent, AgentCommand::Install, args.clone());
+    if args.is_empty() || args.iter().all(|item| item.starts_with('-')) {
+        return get_command(&agent, AgentCommand::Install, args);
     }
-
-    return get_command(&agent, AgentCommand::Add, args.clone());
+    get_command(&agent, AgentCommand::Add, args)
 }
 
 pub fn parse_nr(agent: Agent, mut args: Vec<String>) -> CommandTuple {
-    if args.len() == 0 {
-        args.push("start".into())
+    if args.is_empty() {
+        args.push("start".into());
     }
-    if !args.is_empty() && args.contains(&IF_PRESENT.into()) {
-        args[0] = format!("--if-present {}", args[0]);
-        return get_command(
-            &agent,
-            AgentCommand::Run,
-            exclude(&args, &[IF_PRESENT.to_string()]),
-        );
+    let has_if_present = args.contains(&IF_PRESENT.to_string());
+    if has_if_present {
+        args = exclude(&args, &[IF_PRESENT.to_string()]);
     }
-    if !args.is_empty() {
-        if args.len() > 1 {}
+    let (cmd, mut cmd_args) = get_command(&agent, AgentCommand::Run, args);
+    if has_if_present {
+        // Insert `--if-present` right after the `run` subcommand, matching
+        // upstream's `cmd.args.splice(1, 0, '--if-present')`.
+        cmd_args.insert(1, IF_PRESENT.to_string());
     }
-
-    return get_command(&agent, AgentCommand::Run, args);
+    (cmd, cmd_args)
 }
 
 pub fn parse_nun(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> CommandTuple {
-    if !args.is_empty() && args.contains(&GLOBAL.into()) {
+    if args.contains(&GLOBAL.into()) {
         return get_command(
             &agent,
             AgentCommand::GlobalUninstall,
             exclude(&args, &[GLOBAL.to_string()]),
         );
     }
-    return get_command(&agent, AgentCommand::Uninstall, args);
+    get_command(&agent, AgentCommand::Uninstall, args)
 }
 
 pub fn parse_nlx(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> CommandTuple {
@@ -99,7 +135,7 @@ pub fn parse_nlx(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> C
 }
 
 pub fn parse_nu(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> CommandTuple {
-    if !args.is_empty() && args.contains(&"-i".into()) {
+    if args.contains(&"-i".to_string()) {
         return get_command(
             &agent,
             AgentCommand::UpgradeInteractive,
@@ -111,56 +147,4 @@ pub fn parse_nu(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> Co
 
 pub fn parse_na(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> CommandTuple {
     get_command(&agent, AgentCommand::Agent, args)
-}
-
-fn get_command(agent: &Agent, command: AgentCommand, args: Vec<String>) -> CommandTuple {
-    let agent_command = match agent {
-        Agent::Npm => COMMAND.npm,
-        Agent::Yarn => COMMAND.yarn,
-        Agent::YarnBerry => COMMAND.yarn_berry,
-        Agent::Pnpm => COMMAND.pnpm,
-        Agent::Pnpm6 => COMMAND.pnpm6,
-        Agent::Bun => COMMAND.bun,
-    };
-
-    let c = match command {
-        AgentCommand::Agent => agent_command.agent,
-        AgentCommand::Run => agent_command.run,
-        AgentCommand::Install => agent_command.install,
-        AgentCommand::Frozen => agent_command.frozen,
-        AgentCommand::Global => agent_command.global,
-        AgentCommand::Add => agent_command.add,
-        AgentCommand::Upgrade => agent_command.upgrade,
-        AgentCommand::UpgradeInteractive => agent_command.upgrade_interactive,
-        AgentCommand::Execute => agent_command.execute,
-        AgentCommand::Uninstall => agent_command.uninstall,
-        AgentCommand::GlobalUninstall => agent_command.global_uninstall,
-    };
-
-    if c.is_empty() {
-        process::exit(1)
-    };
-
-    let result: Vec<String> = if c.contains("{0}") {
-        (c.replace("{0}", &args.join(" ")))
-            .trim()
-            .split_whitespace()
-            .map(String::from)
-            .collect()
-    } else if c.contains("{1}") {
-        let r = if args.len() > 1 {
-            format!("{} -- {}", &args[0], &args[1..].join(" "))
-        } else {
-            args[0].to_string()
-        };
-        (c.replace("{1}", &r))
-            .trim()
-            .split_whitespace()
-            .map(String::from)
-            .collect()
-    } else {
-        c.trim().split_whitespace().map(String::from).collect()
-    };
-
-    (result[0].clone(), result[1..].to_vec())
 }

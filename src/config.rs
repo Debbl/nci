@@ -46,18 +46,24 @@ impl Config {
         if Path::new(&rc_path).exists() {
             let conf = Ini::load_from_file(&rc_path).unwrap();
             let section = conf.section(None::<String>).unwrap();
-            let default_agent = section.get("default_agent");
-            let global_agent = section.get("global_agent");
+            // Upstream uses camelCase (defaultAgent / globalAgent); historical
+            // nci versions used snake_case. Accept both, camelCase first.
+            let default_agent = section
+                .get("defaultAgent")
+                .or_else(|| section.get("default_agent"));
+            let global_agent = section
+                .get("globalAgent")
+                .or_else(|| section.get("global_agent"));
             if let Some(default_agent) = default_agent {
-                let default_agent = AGENT_MAP.get(default_agent);
-                if let Some(default_agent) = default_agent {
-                    config.default_agent = DefaultAgent::Agent(default_agent.clone());
+                if default_agent == "prompt" {
+                    config.default_agent = DefaultAgent::Prompt;
+                } else if let Some(agent) = AGENT_MAP.get(default_agent) {
+                    config.default_agent = DefaultAgent::Agent(agent.clone());
                 }
             }
             if let Some(global_agent) = global_agent {
-                let global_agent = AGENT_MAP.get(global_agent);
-                if let Some(global_agent) = global_agent {
-                    config.global_agent = global_agent.clone();
+                if let Some(agent) = AGENT_MAP.get(global_agent) {
+                    config.global_agent = agent.clone();
                 }
             }
         }

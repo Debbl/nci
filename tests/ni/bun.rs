@@ -48,6 +48,6 @@ fn frozen() {
     ni(
         Agent::Bun,
         vec!["--frozen".to_string()],
-        "bun install --no-save".to_string(),
+        "bun install --frozen-lockfile".to_string(),
     );
 }

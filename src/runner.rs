@@ -126,12 +126,14 @@ fn get_cli_command(
     if args.contains(&global) {
         return Some(func(get_global_agent(), args, None));
     }
-    let mut _agent = DefaultAgent::Prompt;
-    if let Some(v) = detect(options.clone()) {
-        _agent = DefaultAgent::Agent(v);
-    } else {
-        _agent = get_default_agent(options.clone().programmatic);
-    }
+    let detected = detect(options.clone());
+    // `hasLock` upstream is `Boolean(agent)` — true iff detect resolved an
+    // agent (via lockfile or `packageManager` field).
+    let has_lock = detected.is_some();
+    let mut _agent = match detected {
+        Some(v) => DefaultAgent::Agent(v),
+        None => get_default_agent(options.programmatic),
+    };
 
     if _agent == DefaultAgent::Prompt {
         let items: Vec<&&str> = AGENT_MAP.keys().filter(|x| !x.contains("@")).collect();
@@ -149,7 +151,7 @@ fn get_cli_command(
     }
     let runner_ctx = RunnerContext {
         programmatic: options.programmatic,
-        has_lock: true,
+        has_lock,
         cwd: options.cwd,
     };
     match _agent {

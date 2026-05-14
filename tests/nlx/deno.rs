@@ -3,19 +3,19 @@ use nci::agents::Agent;
 use super::nlx;
 
 #[test]
-fn single_uninstall() {
+fn single() {
     nlx(
-        Agent::Bun,
+        Agent::Deno,
         vec!["esbuild".to_string()],
-        "bun x esbuild".to_string(),
+        "deno x esbuild".to_string(),
     );
 }
 
 #[test]
 fn multiple() {
     nlx(
-        Agent::Bun,
+        Agent::Deno,
         vec!["esbuild".to_string(), "--version".to_string()],
-        "bun x esbuild --version".to_string(),
+        "deno x esbuild --version".to_string(),
     );
 }

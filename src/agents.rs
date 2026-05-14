@@ -6,10 +6,11 @@ pub enum Agent {
     Pnpm,
     Pnpm6,
     Bun,
+    Deno,
 }
 
 impl Agent {
-    pub fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Agent::Npm => "npm",
             Agent::Yarn => "yarn",
@@ -17,34 +18,54 @@ impl Agent {
             Agent::Pnpm => "pnpm",
             Agent::Pnpm6 => "pnpm@6",
             Agent::Bun => "bun",
+            Agent::Deno => "deno",
+        }
+    }
+
+    /// Executable name, stripping any `@version` suffix.
+    pub fn exec(&self) -> &'static str {
+        match self {
+            Agent::YarnBerry => "yarn",
+            Agent::Pnpm6 => "pnpm",
+            other => other.as_str(),
+        }
+    }
+
+    pub fn commands(&self) -> &'static AgentCommands {
+        match self {
+            Agent::Npm => &NPM_COMMAND,
+            Agent::Yarn => &YARN_COMMAND,
+            Agent::YarnBerry => &YARN_BERRY_COMMAND,
+            Agent::Pnpm => &PNPM_COMMAND,
+            Agent::Pnpm6 => &PNPM6_COMMAND,
+            Agent::Bun => &BUN_COMMAND,
+            Agent::Deno => &DENO_COMMAND,
         }
     }
 }
 
-pub struct AgentCommands {
-    pub agent: &'static str,
-    pub run: &'static str,
-    pub install: &'static str,
-    pub frozen: &'static str,
-    pub global: &'static str,
-    pub add: &'static str,
-    pub upgrade: &'static str,
-    pub upgrade_interactive: &'static str,
-    pub execute: &'static str,
-    pub uninstall: &'static str,
-    pub global_uninstall: &'static str,
+/// One piece of a command template: either a literal token or the placeholder
+/// where the user-supplied args are spliced in.
+#[derive(Copy, Clone, Debug)]
+pub enum Fragment {
+    Lit(&'static str),
+    Args,
 }
 
-pub struct Agents {
-    pub npm: AgentCommands,
-    pub yarn: AgentCommands,
-    pub yarn_berry: AgentCommands,
-    pub pnpm: AgentCommands,
-    pub pnpm6: AgentCommands,
-    pub bun: AgentCommands,
+/// A resolved command shape. Mirrors `AgentCommandValue` in the upstream
+/// `package-manager-detector`:
+/// - `None` ≡ `null` (unsupported by this agent)
+/// - `Plain` ≡ `[lit, lit, 0, ...]`
+/// - `DashDash` ≡ `dashDashArg(agent, sub)` — inserts a `--` separator between
+///   the first arg and the remaining args when more than one arg is present.
+#[derive(Copy, Clone, Debug)]
+pub enum AgentCommandValue {
+    None,
+    Plain(&'static [Fragment]),
+    DashDash(&'static str, &'static str),
 }
 
-#[derive(PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum AgentCommand {
     Agent,
     Run,
@@ -54,100 +75,183 @@ pub enum AgentCommand {
     Add,
     Upgrade,
     UpgradeInteractive,
+    Dedupe,
     Execute,
+    ExecuteLocal,
     Uninstall,
     GlobalUninstall,
 }
 
-pub const COMMAND: Agents = Agents {
-    npm: NPM_COMMAND,
-    yarn: YARN_COMMAND,
-    yarn_berry: YARN_BERRY_COMMAND,
-    pnpm: PNPM_COMMAND,
-    pnpm6: PNPM6_COMMAND,
-    bun: BUN_COMMAND,
-};
+pub struct AgentCommands {
+    pub agent: AgentCommandValue,
+    pub run: AgentCommandValue,
+    pub install: AgentCommandValue,
+    pub frozen: AgentCommandValue,
+    pub global: AgentCommandValue,
+    pub add: AgentCommandValue,
+    pub upgrade: AgentCommandValue,
+    pub upgrade_interactive: AgentCommandValue,
+    pub dedupe: AgentCommandValue,
+    pub execute: AgentCommandValue,
+    pub execute_local: AgentCommandValue,
+    pub uninstall: AgentCommandValue,
+    pub global_uninstall: AgentCommandValue,
+}
+
+impl AgentCommands {
+    pub fn get(&self, cmd: AgentCommand) -> AgentCommandValue {
+        match cmd {
+            AgentCommand::Agent => self.agent,
+            AgentCommand::Run => self.run,
+            AgentCommand::Install => self.install,
+            AgentCommand::Frozen => self.frozen,
+            AgentCommand::Global => self.global,
+            AgentCommand::Add => self.add,
+            AgentCommand::Upgrade => self.upgrade,
+            AgentCommand::UpgradeInteractive => self.upgrade_interactive,
+            AgentCommand::Dedupe => self.dedupe,
+            AgentCommand::Execute => self.execute,
+            AgentCommand::ExecuteLocal => self.execute_local,
+            AgentCommand::Uninstall => self.uninstall,
+            AgentCommand::GlobalUninstall => self.global_uninstall,
+        }
+    }
+}
+
+/// Build an `AgentCommandValue` literally. `_` denotes the args placeholder,
+/// anything else is a `&'static str` literal. `cmd![]` is the unsupported case.
+///
+/// ```ignore
+/// cmd!["npm", "i", "-g", _]   // -> npm i -g <args...>
+/// cmd![]                      // -> unsupported
+/// ```
+macro_rules! cmd {
+    () => { AgentCommandValue::None };
+    ($($t:tt),+ $(,)?) => {
+        AgentCommandValue::Plain(&[$( cmd!(@f $t) ),+])
+    };
+    (@f _) => { Fragment::Args };
+    (@f $s:literal) => { Fragment::Lit($s) };
+}
+
+/// `dashDashArg(agent, sub)` from upstream: emits
+/// `[agent, sub, args[0], --, ...args[1..]]` when args.len() > 1, otherwise
+/// `[agent, sub, args[0]]`.
+macro_rules! dd {
+    ($agent:literal, $sub:literal) => {
+        AgentCommandValue::DashDash($agent, $sub)
+    };
+}
 
 pub const NPM_COMMAND: AgentCommands = AgentCommands {
-    agent: "npm {0}",
-    run: "npm run {1}",
-    install: "npm i {0}",
-    frozen: "npm ci",
-    global: "npm i -g {0}",
-    add: "npm i {0}",
-    upgrade: "npm update {0}",
-    upgrade_interactive: "",
-    execute: "npx {0}",
-    uninstall: "npm uninstall {0}",
-    global_uninstall: "npm uninstall -g {0}",
+    agent: cmd!["npm", _],
+    run: dd!("npm", "run"),
+    install: cmd!["npm", "i", _],
+    frozen: cmd!["npm", "ci", _],
+    global: cmd!["npm", "i", "-g", _],
+    add: cmd!["npm", "i", _],
+    upgrade: cmd!["npm", "update", _],
+    upgrade_interactive: cmd![],
+    dedupe: cmd!["npm", "dedupe", _],
+    execute: cmd!["npx", _],
+    execute_local: cmd!["npx", _],
+    uninstall: cmd!["npm", "uninstall", _],
+    global_uninstall: cmd!["npm", "uninstall", "-g", _],
 };
 
 pub const YARN_COMMAND: AgentCommands = AgentCommands {
-    agent: "yarn {0}",
-    run: "yarn run {0}",
-    install: "yarn install {0}",
-    frozen: "yarn install --frozen-lockfile",
-    global: "yarn global add {0}",
-    add: "yarn add {0}",
-    upgrade: "yarn upgrade {0}",
-    upgrade_interactive: "yarn upgrade-interactive {0}",
-    execute: "npx {0}",
-    uninstall: "yarn remove {0}",
-    global_uninstall: "yarn global remove {0}",
+    agent: cmd!["yarn", _],
+    run: cmd!["yarn", "run", _],
+    install: cmd!["yarn", "install", _],
+    frozen: cmd!["yarn", "install", "--frozen-lockfile", _],
+    global: cmd!["yarn", "global", "add", _],
+    add: cmd!["yarn", "add", _],
+    upgrade: cmd!["yarn", "upgrade", _],
+    upgrade_interactive: cmd!["yarn", "upgrade-interactive", _],
+    dedupe: cmd![],
+    execute: cmd!["npx", _],
+    execute_local: dd!("yarn", "exec"),
+    uninstall: cmd!["yarn", "remove", _],
+    global_uninstall: cmd!["yarn", "global", "remove", _],
 };
 
 pub const YARN_BERRY_COMMAND: AgentCommands = AgentCommands {
-    agent: "yarn {0}",
-    run: "yarn run {0}",
-    install: "yarn install {0}",
-    frozen: "yarn install --immutable",
-    global: "npm i -g {0}",
-    add: "yarn add {0}",
-    upgrade: "yarn up {0}",
-    upgrade_interactive: "yarn up -i {0}",
-    execute: "yarn dlx {0}",
-    uninstall: "yarn remove {0}",
-    global_uninstall: "npm uninstall -g {0}",
+    agent: cmd!["yarn", _],
+    run: cmd!["yarn", "run", _],
+    install: cmd!["yarn", "install", _],
+    frozen: cmd!["yarn", "install", "--immutable", _],
+    // Yarn 2+ removed `global`, fall back to npm.
+    global: cmd!["npm", "i", "-g", _],
+    add: cmd!["yarn", "add", _],
+    upgrade: cmd!["yarn", "up", _],
+    upgrade_interactive: cmd!["yarn", "up", "-i", _],
+    dedupe: cmd!["yarn", "dedupe", _],
+    execute: cmd!["yarn", "dlx", _],
+    execute_local: cmd!["yarn", "exec", _],
+    uninstall: cmd!["yarn", "remove", _],
+    global_uninstall: cmd!["npm", "uninstall", "-g", _],
 };
 
 pub const PNPM_COMMAND: AgentCommands = AgentCommands {
-    agent: "pnpm {0}",
-    run: "pnpm run {0}",
-    install: "pnpm i {0}",
-    frozen: "pnpm i --frozen-lockfile",
-    global: "pnpm add -g {0}",
-    add: "pnpm add {0}",
-    upgrade: "pnpm update {0}",
-    upgrade_interactive: "pnpm update -i {0}",
-    execute: "pnpm dlx {0}",
-    uninstall: "pnpm remove {0}",
-    global_uninstall: "pnpm remove --global {0}",
+    agent: cmd!["pnpm", _],
+    run: cmd!["pnpm", "run", _],
+    install: cmd!["pnpm", "i", _],
+    frozen: cmd!["pnpm", "i", "--frozen-lockfile", _],
+    global: cmd!["pnpm", "add", "-g", _],
+    add: cmd!["pnpm", "add", _],
+    upgrade: cmd!["pnpm", "update", _],
+    upgrade_interactive: cmd!["pnpm", "update", "-i", _],
+    dedupe: cmd!["pnpm", "dedupe", _],
+    execute: cmd!["pnpm", "dlx", _],
+    execute_local: cmd!["pnpm", "exec", _],
+    uninstall: cmd!["pnpm", "remove", _],
+    global_uninstall: cmd!["pnpm", "remove", "--global", _],
 };
 
 pub const PNPM6_COMMAND: AgentCommands = AgentCommands {
-    agent: "pnpm {0}",
-    run: "pnpm run {1}",
-    install: "pnpm i {0}",
-    frozen: "pnpm i --frozen-lockfile",
-    global: "pnpm add -g {0}",
-    add: "pnpm add {0}",
-    upgrade: "pnpm update {0}",
-    upgrade_interactive: "pnpm update -i {0}",
-    execute: "pnpm dlx {0}",
-    uninstall: "pnpm remove {0}",
-    global_uninstall: "pnpm remove --global {0}",
+    agent: cmd!["pnpm", _],
+    run: dd!("pnpm", "run"),
+    install: cmd!["pnpm", "i", _],
+    frozen: cmd!["pnpm", "i", "--frozen-lockfile", _],
+    global: cmd!["pnpm", "add", "-g", _],
+    add: cmd!["pnpm", "add", _],
+    upgrade: cmd!["pnpm", "update", _],
+    upgrade_interactive: cmd!["pnpm", "update", "-i", _],
+    dedupe: cmd!["pnpm", "dedupe", _],
+    execute: cmd!["pnpm", "dlx", _],
+    execute_local: cmd!["pnpm", "exec", _],
+    uninstall: cmd!["pnpm", "remove", _],
+    global_uninstall: cmd!["pnpm", "remove", "--global", _],
 };
 
 pub const BUN_COMMAND: AgentCommands = AgentCommands {
-    agent: "bun {0}",
-    run: "bun run {0}",
-    install: "bun install {0}",
-    frozen: "bun install --no-save",
-    global: "bun add -g {0}",
-    add: "bun add {0}",
-    upgrade: "bun update {0}",
-    upgrade_interactive: "bun update {0}",
-    execute: "bunx {0}",
-    uninstall: "bun remove {0}",
-    global_uninstall: "bun remove -g {0}",
+    agent: cmd!["bun", _],
+    run: cmd!["bun", "run", _],
+    install: cmd!["bun", "install", _],
+    frozen: cmd!["bun", "install", "--frozen-lockfile", _],
+    global: cmd!["bun", "add", "-g", _],
+    add: cmd!["bun", "add", _],
+    upgrade: cmd!["bun", "update", _],
+    upgrade_interactive: cmd!["bun", "update", "-i", _],
+    dedupe: cmd![],
+    execute: cmd!["bun", "x", _],
+    execute_local: cmd!["bun", "x", _],
+    uninstall: cmd!["bun", "remove", _],
+    global_uninstall: cmd!["bun", "remove", "-g", _],
+};
+
+pub const DENO_COMMAND: AgentCommands = AgentCommands {
+    agent: cmd!["deno", _],
+    run: cmd!["deno", "task", _],
+    install: cmd!["deno", "install", _],
+    frozen: cmd!["deno", "install", "--frozen", _],
+    global: cmd!["deno", "install", "-g", _],
+    add: cmd!["deno", "add", _],
+    upgrade: cmd!["deno", "outdated", "--update", _],
+    upgrade_interactive: cmd!["deno", "outdated", "--update", _],
+    dedupe: cmd![],
+    execute: cmd!["deno", "x", _],
+    execute_local: cmd!["deno", "task", "--eval", _],
+    uninstall: cmd!["deno", "remove", _],
+    global_uninstall: cmd!["deno", "uninstall", "-g", _],
 };
