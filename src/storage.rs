@@ -25,26 +25,26 @@ lazy_static! {
 
 pub fn load() {
     let mut storage = STORAGE.lock();
-    if storage.is_none() {
-        if STORAGE_PATH.exists() && STORAGE_PATH.is_file() {
-            let file = File::open(STORAGE_PATH.as_path());
-            if let Ok(mut file) = file {
-                let mut contents = String::new();
-                if file.read_to_string(&mut contents).is_ok() {
-                    let content = serde_json::from_str::<Storage>(&contents).unwrap();
-                    *storage = Some(content);
-                }
-            }
-        } else {
-            *storage = Some(Storage {
-                last_run_command: None,
-            })
-        }
-    } else {
-        *storage = Some(Storage {
-            last_run_command: None,
-        })
+    if storage.is_some() {
+        // Already loaded — keep the existing data instead of clobbering it.
+        return;
     }
+
+    let loaded = if STORAGE_PATH.exists() && STORAGE_PATH.is_file() {
+        File::open(STORAGE_PATH.as_path())
+            .ok()
+            .and_then(|mut file| {
+                let mut contents = String::new();
+                file.read_to_string(&mut contents).ok()?;
+                serde_json::from_str::<Storage>(&contents).ok()
+            })
+    } else {
+        None
+    };
+
+    *storage = Some(loaded.unwrap_or(Storage {
+        last_run_command: None,
+    }));
 }
 
 pub fn dump(storage: &Storage) -> std::io::Result<()> {

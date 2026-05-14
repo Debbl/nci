@@ -69,6 +69,19 @@ pub fn parse_ni(agent: Agent, args: Vec<String>, ctx: Option<RunnerContext>) -> 
             .map(|i| if i == "-D" { "-d".into() } else { i.clone() })
             .collect();
     }
+    // npm uses `--omit=dev`; other agents map `-P` to `--production`.
+    if agent == Agent::Npm {
+        args = args
+            .iter()
+            .map(|i| if i == "-P" { "--omit=dev".into() } else { i.clone() })
+            .collect();
+    }
+    if args.iter().any(|i| i == "-P") {
+        args = args
+            .iter()
+            .map(|i| if i == "-P" { "--production".into() } else { i.clone() })
+            .collect();
+    }
     if args.contains(&GLOBAL.into()) {
         return get_command(
             &agent,
@@ -110,6 +123,7 @@ pub fn parse_nr(agent: Agent, mut args: Vec<String>) -> CommandTuple {
     if has_if_present {
         args = exclude(&args, &[IF_PRESENT.to_string()]);
     }
+    args = merge_workspace_flag(args);
     let (cmd, mut cmd_args) = get_command(&agent, AgentCommand::Run, args);
     if has_if_present {
         // Insert `--if-present` right after the `run` subcommand, matching
@@ -117,6 +131,25 @@ pub fn parse_nr(agent: Agent, mut args: Vec<String>) -> CommandTuple {
         cmd_args.insert(1, IF_PRESENT.to_string());
     }
     (cmd, cmd_args)
+}
+
+/// Merge `-w value` / `--workspace value` into `-w=value` / `--workspace=value`
+/// so that npm doesn't treat the flag as a boolean true.
+fn merge_workspace_flag(args: Vec<String>) -> Vec<String> {
+    let mut out = Vec::with_capacity(args.len());
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        let is_ws = arg == "-w" || arg == "--workspace";
+        if is_ws && i + 1 < args.len() && !args[i + 1].starts_with('-') {
+            out.push(format!("{}={}", arg, args[i + 1]));
+            i += 2;
+        } else {
+            out.push(arg.clone());
+            i += 1;
+        }
+    }
+    out
 }
 
 pub fn parse_nun(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> CommandTuple {

@@ -7,6 +7,7 @@ pub mod deno;
 pub mod npm;
 pub mod pnpm;
 pub mod pnpm6;
+pub mod workspace;
 pub mod yarn;
 pub mod yarn_berry;
 

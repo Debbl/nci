@@ -6,6 +6,7 @@ pub mod bun;
 pub mod deno;
 pub mod npm;
 pub mod pnpm;
+pub mod production;
 pub mod yarn;
 pub mod yarn_berry;
 

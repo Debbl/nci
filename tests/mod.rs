@@ -1,4 +1,6 @@
+pub mod cli;
 pub mod common;
+pub mod detect;
 pub mod na;
 pub mod nci;
 pub mod ni;

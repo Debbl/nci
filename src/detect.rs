@@ -27,6 +27,8 @@ pub struct Package {
     pub scripts: Option<IndexMap<String, String>>,
     #[serde(rename = "scripts-info")]
     pub scripts_info: Option<IndexMap<String, String>>,
+    pub dependencies: Option<IndexMap<String, String>>,
+    pub devDependencies: Option<IndexMap<String, String>>,
 }
 
 lazy_static! {
@@ -60,6 +62,12 @@ lazy_static! {
     };
     pub static ref LOCKS_MAP: IndexMap<&'static str, Agent> = {
         let mut m = IndexMap::new();
+        // Deno marker files come first so they win in projects that also
+        // have a (stale) Node lockfile alongside `deno.json`.
+        m.insert("deno.json", Agent::Deno);
+        m.insert("deno.jsonc", Agent::Deno);
+        // Bun has two lockfile formats; the text-based `bun.lock` is newer.
+        m.insert("bun.lock", Agent::Bun);
         m.insert("bun.lockb", Agent::Bun);
         m.insert("pnpm-lock.yaml", Agent::Pnpm);
         m.insert("yarn.lock", Agent::Yarn);
