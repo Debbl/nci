@@ -4,10 +4,11 @@ use std::process;
 use console::style;
 use inquire::Select;
 use nci::{
+    config::{get_run_agent, RunAgent},
     parse::parse_nr,
     runner::run_cli,
     storage::{dump, load, STORAGE},
-    utils::get_package_json,
+    utils::{exclude, get_package_json, merge_workspace_flag},
 };
 
 #[derive(Debug, Clone)]
@@ -119,6 +120,17 @@ fn main() {
 
             let mut storage_guard = STORAGE.lock();
             *storage_guard = Some(storage);
+            drop(storage_guard);
+
+            // `runAgent=node` swaps `<agent> run` for `node --run`. Node's
+            // `--run` doesn't support `--if-present`, so we drop it.
+            if get_run_agent() == Some(RunAgent::Node) {
+                let stripped = exclude(&args, &["--if-present".to_string()]);
+                let merged = merge_workspace_flag(stripped);
+                let mut cmd_args = vec!["--run".to_string()];
+                cmd_args.extend(merged);
+                return ("node".to_string(), cmd_args);
+            }
 
             parse_nr(agent, args)
         },

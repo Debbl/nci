@@ -125,10 +125,12 @@ pub fn run(func: Runner, args: Vec<String>, options: &mut DetectOptions) {
         println!("ni    {}  install", dash);
         println!("nr    {}  run", dash);
         println!("nlx   {}  execute", dash);
-        println!("nu    {}  upgrade", dash);
+        println!("nup   {}  upgrade", dash);
         println!("nun   {}  uninstall", dash);
         println!("nci   {}  clean install", dash);
+        println!("nd    {}  dedupe dependencies", dash);
         println!("na    {}  agent alias", dash);
+        println!("nu    {}  alias for nup (legacy)", dash);
         println!("ni -v       {}  show versions", dash);
         println!("ni --agent  {}  print detected agent (for scripting)", dash);
         println!("ni ?        {}  dry run (print the resolved command)", dash);
@@ -142,6 +144,21 @@ pub fn run(func: Runner, args: Vec<String>, options: &mut DetectOptions) {
     let command = get_cli_command(func, args, options.clone());
 
     if let Some((mut agent, mut args)) = command {
+        // `useSfw=true` wraps the resolved command in `sfw <cmd> <args>`.
+        if crate::config::get_use_sfw() {
+            if crate::utils::which_cmd("sfw") {
+                args.insert(0, agent);
+                agent = "sfw".to_string();
+            } else if options.programmatic {
+                eprintln!("[ni] sfw is enabled but not installed.");
+                process::exit(1);
+            } else {
+                eprintln!("[ni] sfw is enabled but not installed.");
+                eprintln!("[ni] Install it with: npm install -g sfw");
+                process::exit(1);
+            }
+        }
+
         if let Ok((volta, volta_args)) = get_volta_prefix() {
             args.insert(0, agent);
             agent = volta;

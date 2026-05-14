@@ -5,7 +5,10 @@ use nci::{
 
 fn main() {
     run_cli(
-        |agent, _, ctx| parse_ni(agent, vec!["--frozen-if-present".into()], ctx),
+        |agent, mut args, ctx| {
+            args.push("--frozen-if-present".into());
+            parse_ni(agent, args, ctx)
+        },
         Some(DetectOptions::new().with_auto_install(true)),
     )
 }

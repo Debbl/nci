@@ -10,6 +10,25 @@ pub fn exclude<T: PartialEq + Clone>(arr: &[T], values: &[T]) -> Vec<T> {
         .collect()
 }
 
+/// Merge `-w value` / `--workspace value` into `-w=value` /
+/// `--workspace=value` so npm doesn't treat the flag as a boolean true.
+pub fn merge_workspace_flag(args: Vec<String>) -> Vec<String> {
+    let mut out = Vec::with_capacity(args.len());
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        let is_ws = arg == "-w" || arg == "--workspace";
+        if is_ws && i + 1 < args.len() && !args[i + 1].starts_with('-') {
+            out.push(format!("{}={}", arg, args[i + 1]));
+            i += 2;
+        } else {
+            out.push(arg.clone());
+            i += 1;
+        }
+    }
+    out
+}
+
 pub fn which_cmd(cmd: &str) -> bool {
     let b = which(cmd);
     match b {

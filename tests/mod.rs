@@ -3,6 +3,7 @@ pub mod common;
 pub mod detect;
 pub mod na;
 pub mod nci;
+pub mod nd;
 pub mod ni;
 pub mod nlx;
 pub mod nr;

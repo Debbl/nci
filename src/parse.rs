@@ -3,7 +3,7 @@ use std::process;
 use crate::{
     agents::{Agent, AgentCommand, AgentCommandValue, Fragment},
     runner::RunnerContext,
-    utils::exclude,
+    utils::{exclude, merge_workspace_flag},
 };
 
 const GLOBAL: &str = "-g";
@@ -133,25 +133,6 @@ pub fn parse_nr(agent: Agent, mut args: Vec<String>) -> CommandTuple {
     (cmd, cmd_args)
 }
 
-/// Merge `-w value` / `--workspace value` into `-w=value` / `--workspace=value`
-/// so that npm doesn't treat the flag as a boolean true.
-fn merge_workspace_flag(args: Vec<String>) -> Vec<String> {
-    let mut out = Vec::with_capacity(args.len());
-    let mut i = 0;
-    while i < args.len() {
-        let arg = &args[i];
-        let is_ws = arg == "-w" || arg == "--workspace";
-        if is_ws && i + 1 < args.len() && !args[i + 1].starts_with('-') {
-            out.push(format!("{}={}", arg, args[i + 1]));
-            i += 2;
-        } else {
-            out.push(arg.clone());
-            i += 1;
-        }
-    }
-    out
-}
-
 pub fn parse_nun(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> CommandTuple {
     if args.contains(&GLOBAL.into()) {
         return get_command(
@@ -180,4 +161,21 @@ pub fn parse_nu(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> Co
 
 pub fn parse_na(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> CommandTuple {
     get_command(&agent, AgentCommand::Agent, args)
+}
+
+pub fn parse_nd(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> CommandTuple {
+    // pnpm uses `--check`, npm uses `--dry-run`; expose both via `-c`.
+    let mut args = args;
+    if agent == Agent::Pnpm || agent == Agent::Pnpm6 {
+        args = args
+            .iter()
+            .map(|i| if i == "-c" { "--check".into() } else { i.clone() })
+            .collect();
+    } else if agent == Agent::Npm {
+        args = args
+            .iter()
+            .map(|i| if i == "-c" { "--dry-run".into() } else { i.clone() })
+            .collect();
+    }
+    get_command(&agent, AgentCommand::Dedupe, args)
 }
