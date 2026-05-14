@@ -219,6 +219,35 @@ fn nr_run_agent_node_via_env() {
 }
 
 #[test]
+fn nr_p_auto_selects_single_package() {
+    if which::which("volta").is_ok() {
+        eprintln!("skipping: volta is installed");
+        return;
+    }
+    // One workspace package that has a `build` script. With only one match,
+    // -p should auto-select it (no prompt) and emit `npm run build`.
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("package.json"), r#"{"name":"root"}"#).unwrap();
+    fs::write(dir.path().join("package-lock.json"), "").unwrap();
+    fs::create_dir_all(dir.path().join("packages/api")).unwrap();
+    fs::write(
+        dir.path().join("packages/api/package.json"),
+        r#"{"name":"api","scripts":{"build":"tsc"}}"#,
+    )
+    .unwrap();
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_nr"));
+    clean_env(&mut cmd);
+    let out = cmd
+        .args(["-p", "build", "?"])
+        .current_dir(dir.path())
+        .output()
+        .expect("spawn nr");
+    assert!(out.status.success(), "stderr: {:?}", out.stderr);
+    assert_eq!(stdout(&out), "npm run build");
+}
+
+#[test]
 fn nr_run_agent_node_strips_if_present() {
     if which::which("volta").is_ok() {
         eprintln!("skipping: volta is installed");

@@ -14,7 +14,7 @@ use std::{
 use crate::{
     agents::Agent,
     runner::{execa_command, DetectOptions},
-    utils::which_cmd,
+    utils::{terminal_link, which_cmd},
 };
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -168,10 +168,11 @@ pub fn detect(options: DetectOptions) -> Option<Agent> {
                 if env::var("CI").is_ok() {
                     process::exit(1)
                 }
-                let install_link = style(AGENT_INSTALL.get(agent).unwrap())
-                    .blue()
-                    .underlined()
-                    .to_string();
+                let install_url = AGENT_INSTALL.get(agent).copied().unwrap_or("");
+                let install_link = terminal_link(
+                    &style(agent.exec()).blue().underlined().to_string(),
+                    install_url,
+                );
                 let install_confirm_text =
                     format!("Would you like to globally install {}?", install_link);
                 let confirmation = Confirm::new(&install_confirm_text)

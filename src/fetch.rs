@@ -5,6 +5,8 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use termion::terminal_size;
 
+use crate::utils::{supports_hyperlink, terminal_link};
+
 #[derive(Debug, Serialize, Deserialize)]
 struct PackageLinks {
     npm: String,
@@ -44,12 +46,17 @@ impl Display for Choice {
 }
 
 fn format_package_with_url(name_version: &str, url: &str, terminal_columns: u16) -> String {
-    format!(
-        "{:<width$} {}",
-        name_version,
-        url,
-        width = terminal_columns as usize - url.len()
-    )
+    // Prefer OSC 8 hyperlinks when the terminal supports them; otherwise
+    // fall back to the padded "name url" layout if there's room, else drop
+    // the URL entirely.
+    if supports_hyperlink() {
+        format!("{} {}", name_version, terminal_link(url, url))
+    } else if name_version.len() + url.len() + 1 <= terminal_columns as usize {
+        let pad = terminal_columns as usize - url.len();
+        format!("{:<width$} {}", name_version, url, width = pad)
+    } else {
+        name_version.to_string()
+    }
 }
 
 pub async fn fetch_npm_packages(pattern: &str) -> Result<Vec<Choice>, Box<dyn Error>> {

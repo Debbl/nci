@@ -27,6 +27,7 @@ indexmap = { version = "2.1.0", features = ["serde"] }
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 termion = "4.0.2"
+walkdir = "2.5"
 
 [[bin]]
 name = "ni"

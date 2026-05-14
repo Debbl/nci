@@ -1,10 +1,16 @@
+use std::env;
 use std::fmt::Display;
 use std::process;
 
 use console::style;
 use inquire::Select;
 use nci::{
+    completion::{
+        completion_suggestions, RAW_BASH_COMPLETION_SCRIPT, RAW_FISH_COMPLETION_SCRIPT,
+        RAW_ZSH_COMPLETION_SCRIPT,
+    },
     config::{get_run_agent, RunAgent},
+    monorepo::load_packages,
     parse::parse_nr,
     runner::run_cli,
     storage::{dump, load, STORAGE},
@@ -28,9 +34,88 @@ impl Display for ScriptRaw {
 }
 
 fn main() {
+    // Completion paths bypass agent detection — they only need the cwd's
+    // package.json. Handled in main() so a stale lockfile / missing agent
+    // never blocks completion.
+    let argv: Vec<String> = env::args().skip(1).collect();
+    if let Some(first) = argv.first() {
+        match first.as_str() {
+            "--completion-bash" => {
+                println!("{}", RAW_BASH_COMPLETION_SCRIPT.trim());
+                return;
+            }
+            "--completion-zsh" => {
+                println!("{}", RAW_ZSH_COMPLETION_SCRIPT.trim());
+                return;
+            }
+            "--completion-fish" => {
+                println!("{}", RAW_FISH_COMPLETION_SCRIPT.trim());
+                return;
+            }
+            "--completion" => {
+                // In bash COMP_LINE+COMP_CWORD are set and argv shape is
+                // ["--completion", "nr", "<typed>"…]. In zsh/fish, only
+                // ["--completion", "<typed>"…].
+                let prefix = if env::var("COMP_LINE").is_ok() && env::var("COMP_CWORD").is_ok() {
+                    let cword: usize = env::var("COMP_CWORD")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    if cword == 1 {
+                        argv.get(2).cloned().unwrap_or_default()
+                    } else {
+                        return;
+                    }
+                } else {
+                    argv.get(1).cloned().unwrap_or_default()
+                };
+                let cwd = env::current_dir().unwrap_or_default();
+                for s in completion_suggestions(&cwd, &prefix) {
+                    println!("{}", s);
+                }
+                return;
+            }
+            _ => {}
+        }
+    }
+
     run_cli(
-        |agent, mut args, ctx| {
+        |agent, mut args, mut ctx| {
             load();
+
+            // `-p` flag: pick a package in the workspace, then run a script
+            // inside it. We update ctx.cwd AND the process cwd so both the
+            // script picker (which reads ctx.cwd/package.json) and the
+            // eventual spawned `npm run …` see the new directory.
+            if args.first().map(|s| s.as_str()) == Some("-p") {
+                let script_filter = args
+                    .get(1)
+                    .cloned()
+                    .filter(|s| !s.starts_with('-'));
+                let base = ctx
+                    .as_ref()
+                    .map(|c| c.cwd.clone())
+                    .unwrap_or_else(|| env::current_dir().unwrap_or_default());
+                let mut pkgs = load_packages(&base, script_filter.as_deref());
+                if pkgs.is_empty() {
+                    eprintln!("{}", style("No packages found").red());
+                    process::exit(1);
+                }
+                let selected = if pkgs.len() == 1 {
+                    pkgs.remove(0)
+                } else {
+                    match Select::new("select a package", pkgs).prompt() {
+                        Ok(p) => p,
+                        Err(_) => process::exit(1),
+                    }
+                };
+                env::set_current_dir(&selected.cwd)
+                    .expect("change to selected package directory");
+                if let Some(c) = ctx.as_mut() {
+                    c.cwd = selected.cwd.clone();
+                }
+                args.remove(0); // strip `-p`
+            }
 
             if args.len() > 0 && args[0] == "-" {
                 let storage_guard = STORAGE.lock();

@@ -10,6 +10,30 @@ pub fn exclude<T: PartialEq + Clone>(arr: &[T], values: &[T]) -> Vec<T> {
         .collect()
 }
 
+/// True when the terminal probably understands OSC 8 hyperlinks. Exposed for
+/// callers that want to bake their own link rendering.
+pub fn supports_hyperlink() -> bool {
+    let force = std::env::var("FORCE_HYPERLINK").is_ok();
+    let disable = std::env::var("NO_HYPERLINK").is_ok();
+    let is_tty = console::Term::stdout().features().is_attended();
+    force || (is_tty && !disable)
+}
+
+/// OSC 8 hyperlink. Terminals that understand it render `text` as a
+/// clickable link to `url`; everything else falls back to `text (url)`.
+/// Honours `NO_HYPERLINK` (disable) and `FORCE_HYPERLINK` (always on).
+pub fn terminal_link(text: &str, url: &str) -> String {
+    let force = std::env::var("FORCE_HYPERLINK").is_ok();
+    let disable = std::env::var("NO_HYPERLINK").is_ok();
+    let is_tty = console::Term::stdout().features().is_attended();
+    let supported = force || (is_tty && !disable);
+    if supported {
+        format!("\u{1b}]8;;{}\u{7}{}\u{1b}]8;;\u{7}", url, text)
+    } else {
+        format!("{} ({})", text, url)
+    }
+}
+
 /// Merge `-w value` / `--workspace value` into `-w=value` /
 /// `--workspace=value` so npm doesn't treat the flag as a boolean true.
 pub fn merge_workspace_flag(args: Vec<String>) -> Vec<String> {
@@ -27,6 +51,35 @@ pub fn merge_workspace_flag(args: Vec<String>) -> Vec<String> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_link_force_emits_osc8() {
+        // FORCE_HYPERLINK bypasses TTY detection — useful for tests.
+        std::env::set_var("FORCE_HYPERLINK", "1");
+        std::env::remove_var("NO_HYPERLINK");
+        let out = terminal_link("npm", "https://npmjs.com");
+        // OSC 8 escape: ESC ] 8 ; ; <url> BEL <text> ESC ] 8 ; ; BEL
+        assert!(out.contains("\u{1b}]8;;https://npmjs.com\u{7}"));
+        assert!(out.ends_with("\u{1b}]8;;\u{7}"));
+        assert!(out.contains("npm"));
+        std::env::remove_var("FORCE_HYPERLINK");
+    }
+
+    #[test]
+    fn terminal_link_fallback_when_no_tty() {
+        // Cargo tests don't have a TTY by default — and NO_HYPERLINK overrides
+        // both ways. With NO_HYPERLINK set, we always fall back.
+        std::env::set_var("NO_HYPERLINK", "1");
+        std::env::remove_var("FORCE_HYPERLINK");
+        let out = terminal_link("npm", "https://npmjs.com");
+        assert_eq!(out, "npm (https://npmjs.com)");
+        std::env::remove_var("NO_HYPERLINK");
+    }
 }
 
 pub fn which_cmd(cmd: &str) -> bool {

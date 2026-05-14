@@ -1,6 +1,8 @@
 pub mod cli;
 pub mod common;
+pub mod completion;
 pub mod detect;
+pub mod monorepo;
 pub mod na;
 pub mod nci;
 pub mod nd;
