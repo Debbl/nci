@@ -53,10 +53,7 @@ pub fn run_cli(func: Runner, options: Option<DetectOptions>) {
         .filter(|v| !v.is_empty())
         .collect::<Vec<String>>();
 
-    let mut options = match options {
-        Some(o) => o,
-        None => DetectOptions::default(),
-    };
+    let mut options = options.unwrap_or_default();
 
     run(func, args, &mut options)
 }
@@ -170,10 +167,10 @@ pub fn run(func: Runner, args: Vec<String>, options: &mut DetectOptions) {
             }
         }
 
-        if let Ok((volta, volta_args)) = get_volta_prefix() {
+        if let Some((volta, volta_args)) = get_volta_prefix() {
             args.insert(0, agent);
             agent = volta;
-            args = volta_args.into_iter().chain(args.into_iter()).collect();
+            args = volta_args.into_iter().chain(args).collect();
         }
 
         if debug {

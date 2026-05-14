@@ -11,7 +11,7 @@ use tokio::runtime::Runtime;
 fn main() {
     run_cli(
         |agent, mut args, ctx| {
-            let is_interactive = args.get(0) == Some(&"-i".to_string());
+            let is_interactive = args.first() == Some(&"-i".to_string());
 
             if is_interactive {
                 let fetch_pattern = match args.get(1) {
@@ -28,7 +28,7 @@ fn main() {
                     .block_on(fetch_npm_packages(&fetch_pattern));
                 let packages = match packages {
                     Ok(packages) => {
-                        if packages.len() == 0 {
+                        if packages.is_empty() {
                             println!("No results found");
                             process::exit(1);
                         } else {

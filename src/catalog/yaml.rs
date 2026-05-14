@@ -63,16 +63,14 @@ fn find_top_level_block(lines: &[String], key: &str) -> Option<usize> {
 fn find_child(lines: &[String], parent_start: usize, name: &str) -> Option<(usize, usize)> {
     let end = block_end(lines, parent_start);
     let needle = format!("{}:", name);
-    for i in (parent_start + 1)..end {
-        let line = &lines[i];
+    for (offset, line) in lines[parent_start + 1..end].iter().enumerate() {
         let indent = indent_of(line);
         if indent == 0 {
             return None;
         }
-        let trimmed = line.trim_start();
-        let trimmed = trimmed.trim_end();
+        let trimmed = line.trim_start().trim_end();
         if trimmed == needle || trimmed.starts_with(&format!("{} ", needle)) {
-            return Some((i, indent));
+            return Some((parent_start + 1 + offset, indent));
         }
     }
     None
@@ -82,13 +80,12 @@ fn find_child(lines: &[String], parent_start: usize, name: &str) -> Option<(usiz
 /// ends at the first non-blank line whose indent is ≤ the parent's indent.
 fn block_end(lines: &[String], start: usize) -> usize {
     let parent_indent = indent_of(&lines[start]);
-    for i in (start + 1)..lines.len() {
-        let line = &lines[i];
+    for (offset, line) in lines[start + 1..].iter().enumerate() {
         if line.trim().is_empty() {
             continue;
         }
         if indent_of(line) <= parent_indent {
-            return i;
+            return start + 1 + offset;
         }
     }
     lines.len()
@@ -98,14 +95,11 @@ fn block_end(lines: &[String], start: usize) -> usize {
 /// indent value found, or `default` if the block is empty.
 fn detect_child_indent(lines: &[String], parent_start: usize, default: usize) -> usize {
     let end = block_end(lines, parent_start);
-    for i in (parent_start + 1)..end {
-        let line = &lines[i];
-        if line.trim().is_empty() {
-            continue;
-        }
-        return indent_of(line);
-    }
-    default
+    lines[parent_start + 1..end]
+        .iter()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| indent_of(l))
+        .unwrap_or(default)
 }
 
 /// Index just past the last non-blank line of the block. Insertion before

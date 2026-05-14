@@ -63,7 +63,7 @@ fn format_package_with_url(name_version: &str, url: &str, terminal_columns: u16)
     // the URL entirely.
     if supports_hyperlink() {
         format!("{} {}", name_version, terminal_link(url, url))
-    } else if name_version.len() + url.len() + 1 <= terminal_columns as usize {
+    } else if name_version.len() + url.len() < terminal_columns as usize {
         let pad = terminal_columns as usize - url.len();
         format!("{:<width$} {}", name_version, url, width = pad)
     } else {
@@ -103,7 +103,7 @@ pub async fn fetch_npm_packages(pattern: &str) -> Result<Vec<Choice>, Box<dyn Er
                     style(pkg.version.clone()).blue(),
                     width = 30
                 ),
-                &repository_url,
+                repository_url,
                 terminal_columns,
             );
             Choice { title, value: pkg }

@@ -128,7 +128,7 @@ fn main() {
                 args.remove(0); // strip `-p`
             }
 
-            if args.len() > 0 && args[0] == "-" {
+            if !args.is_empty() && args[0] == "-" {
                 let storage_guard = STORAGE.lock();
                 let storage = storage_guard.as_ref().unwrap();
                 let storage = storage.clone();
@@ -139,75 +139,66 @@ fn main() {
                 args[0] = storage.last_run_command.unwrap();
             }
 
-            if args.len() == 0 {
-                match ctx {
-                    Some(ctx) => {
-                        if !ctx.programmatic {
-                            let path = ctx.cwd.join("package.json");
-                            match path.to_str() {
-                                Some(path) => {
-                                    let storage_guard = STORAGE.lock();
-                                    let storage = storage_guard.as_ref().unwrap();
-                                    let pkg = get_package_json(path);
-                                    let scripts = pkg.scripts.unwrap_or_default();
-                                    let scripts_info = pkg.scripts_info.unwrap_or_default();
-                                    let names = scripts
-                                        .iter()
-                                        .map(|(key, value)| [key, value])
-                                        .collect::<Vec<[&String; 2]>>();
-                                    let raw = names
-                                        .iter()
-                                        .filter(|x| !x[0].starts_with("?"))
-                                        .map(|[key, value]| {
-                                            let key = key.to_string();
-                                            let cmd = value.to_string();
-                                            let description = scripts_info
-                                                .get(&key)
-                                                .map_or_else(|| cmd.clone(), |v| v.to_string());
-                                            ScriptRaw {
-                                                key: key,
-                                                _cmd: cmd,
-                                                description,
-                                            }
-                                        })
-                                        .collect::<Vec<ScriptRaw>>();
-
-                                    if let Some(command) = &storage.last_run_command {
-                                        let last = raw.iter().find(|x| command == &x.key);
-                                        match last {
-                                            Some(_) => {
-                                                // raw.insert(0, last.clone())
-                                            }
-                                            None => {}
-                                        };
+            if args.is_empty() {
+                if let Some(ctx) = ctx {
+                    if !ctx.programmatic {
+                        let path = ctx.cwd.join("package.json");
+                        if let Some(path) = path.to_str() {
+                            let storage_guard = STORAGE.lock();
+                            let storage = storage_guard.as_ref().unwrap();
+                            let pkg = get_package_json(path);
+                            let scripts = pkg.scripts.unwrap_or_default();
+                            let scripts_info = pkg.scripts_info.unwrap_or_default();
+                            let names = scripts
+                                .iter()
+                                .map(|(key, value)| [key, value])
+                                .collect::<Vec<[&String; 2]>>();
+                            let raw = names
+                                .iter()
+                                .filter(|x| !x[0].starts_with("?"))
+                                .map(|[key, value]| {
+                                    let key = key.to_string();
+                                    let cmd = value.to_string();
+                                    let description = scripts_info
+                                        .get(&key)
+                                        .map_or_else(|| cmd.clone(), |v| v.to_string());
+                                    ScriptRaw {
+                                        key,
+                                        _cmd: cmd,
+                                        description,
                                     }
+                                })
+                                .collect::<Vec<ScriptRaw>>();
 
-                                    // fuzzy filter against `key + description`,
-                                    // matching upstream's fzf selector.
-                                    let filter = |input: &str,
-                                                  opt: &ScriptRaw,
-                                                  _opt_str: &str,
-                                                  _idx: usize|
-                                     -> bool {
-                                        let combined =
-                                            format!("{} {}", opt.key, opt.description);
-                                        fuzzy::matches(input, &combined)
-                                    };
-                                    let ans = Select::new("script to run:", raw)
-                                        .with_filter(&filter)
-                                        .prompt();
+                            if let Some(command) = &storage.last_run_command {
+                                let last = raw.iter().find(|x| command == &x.key);
+                                if last.is_some() {
+                                    // raw.insert(0, last.clone())
+                                };
+                            }
 
-                                    if let Ok(ans) = ans {
-                                        args.push(ans.key);
-                                    } else {
-                                        process::exit(1)
-                                    }
-                                }
-                                None => {}
+                            // fuzzy filter against `key + description`,
+                            // matching upstream's fzf selector.
+                            let filter = |input: &str,
+                                          opt: &ScriptRaw,
+                                          _opt_str: &str,
+                                          _idx: usize|
+                             -> bool {
+                                let combined =
+                                    format!("{} {}", opt.key, opt.description);
+                                fuzzy::matches(input, &combined)
+                            };
+                            let ans = Select::new("script to run:", raw)
+                                .with_filter(&filter)
+                                .prompt();
+
+                            if let Ok(ans) = ans {
+                                args.push(ans.key);
+                            } else {
+                                process::exit(1)
                             }
                         }
                     }
-                    None => {}
                 }
             }
             let storage_guard = STORAGE.lock();

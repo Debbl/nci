@@ -7,7 +7,7 @@ use std::{
     env,
     fs::File,
     io::Read,
-    path::{Path, PathBuf},
+    path::Path,
     process,
 };
 
@@ -102,19 +102,17 @@ pub fn detect(options: DetectOptions) -> Option<Agent> {
     if let Some(package_json_path) = package_json_path {
         let path = Path::new(&package_json_path);
         if path.exists() && path.is_file() {
-            let file = File::open(&path);
+            let file = File::open(path);
             if let Ok(mut file) = file {
                 let mut contents = String::new();
                 if file.read_to_string(&mut contents).is_ok() {
                     let p = serde_json::from_str::<Package>(&contents).unwrap();
                     #[allow(non_snake_case)]
                     if let Some(packageManager) = p.packageManager {
-                        let parts = if packageManager.starts_with('^') {
-                            String::from(&packageManager[1..])
-                        } else {
-                            String::from(&packageManager)
-                        };
-                        let parts = parts.split('@').collect::<Vec<&str>>();
+                        let trimmed = packageManager
+                            .strip_prefix('^')
+                            .unwrap_or(&packageManager);
+                        let parts = trimmed.split('@').collect::<Vec<&str>>();
                         let name = parts[0];
                         version = Some(parts[1].to_string());
                         let ver = parts[1]
@@ -125,10 +123,10 @@ pub fn detect(options: DetectOptions) -> Option<Agent> {
 
                         let ver = ver.parse::<i32>().unwrap();
 
-                        if name.to_string() == "yarn" && ver > 1 {
+                        if name == "yarn" && ver > 1 {
                             agent = Some(Agent::YarnBerry);
                             version = Some("berry".into())
-                        } else if name.to_string() == "pnpm" && ver < 7 {
+                        } else if name == "pnpm" && ver < 7 {
                             agent = Some(Agent::Pnpm6);
                         } else if AGENT_MAP.contains_key(name) {
                             agent = AGENT_MAP.get(name).cloned();
@@ -154,8 +152,8 @@ pub fn detect(options: DetectOptions) -> Option<Agent> {
 
     if let Some(agent) = &agent {
         let cmd = which_cmd(agent.exec());
-        if cmd == false && options.programmatic == false {
-            if options.auto_install == false {
+        if !cmd && !options.programmatic {
+            if !options.auto_install {
                 println!(
                     "{}",
                     style(format!(
@@ -195,11 +193,11 @@ pub fn detect(options: DetectOptions) -> Option<Agent> {
         }
     }
 
-    return agent;
+    agent
 }
 
-pub fn find_up(filename: &str, cwd: &PathBuf) -> Option<String> {
-    let mut cwd = cwd.clone();
+pub fn find_up(filename: &str, cwd: &Path) -> Option<String> {
+    let mut cwd = cwd.to_path_buf();
     loop {
         let file_path = cwd.join(filename);
         if file_path.is_file() {

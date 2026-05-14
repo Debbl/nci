@@ -4,9 +4,7 @@ use which::which;
 use crate::detect::Package;
 
 pub fn exclude<T: PartialEq + Clone>(arr: &[T], values: &[T]) -> Vec<T> {
-    arr.iter()
-        .cloned()
-        .filter(|item| !values.contains(item))
+    arr.iter().filter(|&item| !values.contains(item)).cloned()
         .collect()
 }
 
@@ -53,6 +51,38 @@ pub fn merge_workspace_flag(args: Vec<String>) -> Vec<String> {
     out
 }
 
+pub fn which_cmd(cmd: &str) -> bool {
+    let b = which(cmd);
+    b.is_ok()
+}
+
+/// When Volta is on PATH, every package-manager invocation gets prefixed
+/// with `volta run` so the right toolchain version is picked.
+/// See <https://blog.volta.sh/2020/11/25/command-spotlight-volta-run/>.
+pub fn get_volta_prefix() -> Option<(String, Vec<String>)> {
+    if which_cmd("volta") {
+        Some(("volta".to_string(), vec!["run".to_string()]))
+    } else {
+        None
+    }
+}
+
+pub fn get_package_json(path: &str) -> Package {
+    let path = Path::new(&path);
+    if path.exists() && path.is_file() {
+        let file = File::open(path);
+        if let Ok(mut file) = file {
+            let mut contents = String::new();
+            if file.read_to_string(&mut contents).is_ok() {
+                return serde_json::from_str::<Package>(&contents).unwrap_or_default();
+            }
+            return Package::default();
+        }
+        return Package::default();
+    }
+    Package::default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,44 +110,4 @@ mod tests {
         assert_eq!(out, "npm (https://npmjs.com)");
         std::env::remove_var("NO_HYPERLINK");
     }
-}
-
-pub fn which_cmd(cmd: &str) -> bool {
-    let b = which(cmd);
-    match b {
-        Ok(_) => true,
-        Err(_) => false,
-    }
-}
-
-// https://blog.volta.sh/2020/11/25/command-spotlight-volta-run/
-pub fn get_volta_prefix() -> Result<(String, Vec<String>), ()> {
-    let volta_prefix = ("volta".to_string(), vec!["run".to_string()]);
-
-    let has_volta_command = which_cmd("volta");
-
-    if has_volta_command {
-        Ok(volta_prefix)
-    } else {
-        Err(())
-    }
-}
-
-pub fn get_package_json(path: &str) -> Package {
-    let path = Path::new(&path);
-    if path.exists() && path.is_file() {
-        let file = File::open(&path);
-        if let Ok(mut file) = file {
-            let mut contents = String::new();
-            if file.read_to_string(&mut contents).is_ok() {
-                return match serde_json::from_str::<Package>(&contents) {
-                    Ok(v) => v,
-                    Err(_) => Package::default(),
-                };
-            }
-            return Package::default();
-        }
-        return Package::default();
-    }
-    Package::default()
 }
