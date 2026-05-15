@@ -178,3 +178,104 @@ fn pnpm_workspace_yaml_is_updated_when_default_only() {
     let yaml_after = fs::read_to_string(dir.path().join("pnpm-workspace.yaml")).unwrap();
     assert_eq!(yaml_after, yaml);
 }
+
+/// Unit-level tests for the catalog provider in `src/catalog/mod.rs`. These
+/// poke the library functions directly, mirroring ni's `test/ni/catalog.spec.ts`.
+mod provider {
+    use std::fs;
+
+    use nci::catalog::{catalog_ref, detect_pnpm_catalogs};
+    use tempfile::TempDir;
+
+    fn named_workspace() -> TempDir {
+        let yaml = "packages:\n  - packages/*\n\ncatalogs:\n  prod:\n    react: ^18.3.0\n    express: ^4.21.0\n  dev:\n    typescript: ^5.6.0\n    vitest: ^2.1.0\n";
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("pnpm-workspace.yaml"), yaml).unwrap();
+        dir
+    }
+
+    fn default_only_workspace() -> TempDir {
+        let yaml = "packages:\n  - packages/*\n\ncatalog:\n  react: ^18.3.0\n  express: ^4.21.0\n";
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("pnpm-workspace.yaml"), yaml).unwrap();
+        dir
+    }
+
+    #[test]
+    fn catalog_ref_returns_bare_for_default() {
+        assert_eq!(catalog_ref("default"), "catalog:");
+    }
+
+    #[test]
+    fn catalog_ref_includes_name_for_non_default() {
+        assert_eq!(catalog_ref("dev"), "catalog:dev");
+        assert_eq!(catalog_ref("prod"), "catalog:prod");
+    }
+
+    #[test]
+    fn detect_named_catalogs() {
+        let dir = named_workspace();
+        let config = detect_pnpm_catalogs(dir.path()).expect("config");
+        assert!(!config.has_default_catalog);
+        assert!(config.has_named_catalogs);
+        assert_eq!(config.catalogs.len(), 2);
+        let names: Vec<_> = config.catalogs.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["prod", "dev"]);
+    }
+
+    #[test]
+    fn detect_default_catalog_only() {
+        let dir = default_only_workspace();
+        let config = detect_pnpm_catalogs(dir.path()).expect("config");
+        assert!(config.has_default_catalog);
+        assert!(!config.has_named_catalogs);
+        assert_eq!(config.catalogs.len(), 1);
+        assert_eq!(config.catalogs[0].name, "default");
+    }
+
+    #[test]
+    fn detect_walks_up_from_subdirectory() {
+        let dir = named_workspace();
+        let sub = dir.path().join("packages").join("app");
+        fs::create_dir_all(&sub).unwrap();
+        let config = detect_pnpm_catalogs(&sub).expect("config");
+        assert_eq!(config.catalogs.len(), 2);
+    }
+
+    #[test]
+    fn find_package_in_named_catalog() {
+        let dir = named_workspace();
+        let config = detect_pnpm_catalogs(dir.path()).unwrap();
+        let info = config.find_package("react").expect("react in catalog");
+        assert_eq!(info.name, "prod");
+
+        let info = config.find_package("typescript").expect("typescript");
+        assert_eq!(info.name, "dev");
+    }
+
+    #[test]
+    fn find_package_returns_none_for_unknown() {
+        let dir = named_workspace();
+        let config = detect_pnpm_catalogs(dir.path()).unwrap();
+        assert!(config.find_package("unknown-pkg").is_none());
+    }
+
+    #[test]
+    fn find_package_in_default_catalog() {
+        let dir = default_only_workspace();
+        let config = detect_pnpm_catalogs(dir.path()).unwrap();
+        let info = config.find_package("react").expect("react");
+        assert_eq!(info.name, "default");
+    }
+
+    #[test]
+    fn detect_returns_none_when_yaml_has_no_catalogs() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("pnpm-workspace.yaml"),
+            "packages:\n  - packages/*\n",
+        )
+        .unwrap();
+        assert!(detect_pnpm_catalogs(dir.path()).is_none());
+    }
+}

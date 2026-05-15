@@ -4,6 +4,7 @@ use crate::common::expect;
 
 pub mod bun;
 pub mod deno;
+pub mod interactive;
 pub mod npm;
 pub mod pnpm;
 pub mod production;
