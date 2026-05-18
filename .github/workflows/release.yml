@@ -1,0 +1,77 @@
+name: Release
+
+# - Push a `v*` tag → create a GitHub Release + upload prebuilt binaries.
+# - Manual dispatch  → build the binaries in dry-run mode so you can sanity-
+#   check that all targets still compile without publishing anything.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    # Skipped on workflow_dispatch since there's no tag to release against.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # changelogithub walks the git history to diff against the previous
+          # tag, so we need full history (default is shallow).
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      # Generates the Release body from Conventional Commits between this tag
+      # and the previous one, then creates (or updates) the GitHub Release.
+      - run: npx changelogithub@0.13
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-assets:
+    needs: create-release
+    # Run even when `create-release` was skipped (dispatch path) so the
+    # dispatch trigger still exercises every target via dry-run.
+    if: |
+      always() &&
+      (needs.create-release.result == 'success' ||
+       needs.create-release.result == 'skipped')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+          - target: x86_64-pc-windows-msvc
+            os: windows-2022
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          # All nine binaries get bundled into one archive per target,
+          # e.g. nci-x86_64-apple-darwin.tar.gz.
+          bin: ni,nr,nci,na,nlx,nu,nup,nun,nd
+          target: ${{ matrix.target }}
+          tar: unix
+          zip: windows
+          checksum: sha256
+          # Dispatch runs don't have a tag — build everything but skip the
+          # release upload. Lets you verify compilation across all targets.
+          dry-run: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          token: ${{ secrets.GITHUB_TOKEN }}

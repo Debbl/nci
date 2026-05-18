@@ -67,3 +67,19 @@ path = "src/bin/nun.rs"
 [[bin]]
 name = "nd"
 path = "src/bin/nd.rs"
+
+# `cargo release <patch|minor|major> --execute` bumps the version, commits,
+# tags as `vX.Y.Z`, and pushes — which then trips .github/workflows/release.yml.
+# Install with: cargo install cargo-release
+[package.metadata.release]
+tag-prefix = "v"
+tag-name = "v{{version}}"
+tag-message = "v{{version}}"
+pre-release-commit-message = "chore: release v{{version}}"
+# Don't publish to crates.io. Releases live as GitHub Releases with prebuilt
+# binaries; flip to `true` if you ever want crates.io distribution too.
+publish = false
+push = true
+# Only allow releasing from `main`. Catches "oops I'm still on a feature
+# branch" before it pushes a tag.
+allow-branch = ["main"]
