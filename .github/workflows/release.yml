@@ -90,24 +90,70 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      # Updates Formula/nci.rb in Debbl/homebrew-tap: bumps `version`, swaps in
-      # the new release's per-target URLs, and recomputes each sha256 by
-      # downloading the archives the formula references. One invocation covers
-      # all three platforms because the action rewrites every matching url.
-      - uses: mislav/bump-homebrew-formula-action@v3
+      # We can't use mislav/bump-homebrew-formula-action here: it only
+      # rewrites the sha256 for the single download-url you hand it, which
+      # leaves the other two targets pointing at the previous release's
+      # sha256 — broken brew install for everyone not on macOS arm64.
+      #
+      # Instead, check the tap out directly and patch all three sha256s in
+      # one atomic commit.
+      - uses: actions/checkout@v5
         with:
-          formula-name: nci
-          formula-path: Formula/nci.rb
-          homebrew-tap: Debbl/homebrew-tap
-          # Any one of the per-target archives works as the version anchor —
-          # the action discovers the tag/version from this URL and applies it
-          # to every other url in the formula.
-          download-url: https://github.com/Debbl/nci/releases/download/${{ github.ref_name }}/nci-aarch64-apple-darwin.tar.gz
-          commit-message: |
-            nci ${{ github.ref_name }}
-
-            Created by https://github.com/Debbl/nci/actions/runs/${{ github.run_id }}
+          repository: Debbl/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: Bump Formula/nci.rb (version + all 3 sha256s) and push
         env:
-          # PAT with `contents: write` on Debbl/homebrew-tap. The default
-          # GITHUB_TOKEN can't write to another repo.
-          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          RUN_URL: https://github.com/Debbl/nci/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          export VERSION="${TAG#v}"
+
+          # Fetch each target's sha256 sidecar (uploaded by taiki-e/upload-
+          # rust-binary-action). Sidecars are "<hex>  nci-<target>.tar.gz".
+          # Stash each sha as an env var keyed by the underscored target name.
+          for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu; do
+            sha=$(curl -fsSL "https://github.com/Debbl/nci/releases/download/${TAG}/nci-${target}.sha256" | awk '{print $1}')
+            export "SHA_${target//-/_}=${sha}"
+          done
+
+          # Patch the formula. Python over sed because we want to update
+          # sha256 only on the line immediately after each matching url, not
+          # every sha256 in the file.
+          python3 - <<'PY'
+          import os, pathlib, re
+
+          version = os.environ["VERSION"]
+          path = pathlib.Path("tap/Formula/nci.rb")
+          src = path.read_text()
+          original = src
+
+          src = re.sub(r'version "[^"]+"', f'version "{version}"', src, count=1)
+
+          for target in ("aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"):
+              sha = os.environ[f"SHA_{target.replace('-', '_')}"]
+              pattern = re.compile(
+                  rf'(nci-{re.escape(target)}\.tar\.gz"\s*\n\s*sha256 ")[a-f0-9]+(")',
+                  re.MULTILINE,
+              )
+              src, n = pattern.subn(rf'\g<1>{sha}\g<2>', src)
+              if n != 1:
+                  raise SystemExit(f"expected 1 sha256 match for {target}, found {n}")
+
+          if src == original:
+              raise SystemExit("formula was not modified — bailing instead of pushing an empty commit")
+
+          path.write_text(src)
+          PY
+
+          # Commit and push to the tap. Identity here is a bot; the PAT in
+          # the checkout step already configured push auth.
+          cd tap
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/nci.rb
+          git commit -m "nci ${TAG}
+
+          Created by ${RUN_URL}"
+          git push
