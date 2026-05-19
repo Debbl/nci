@@ -8,11 +8,30 @@ A Rust port of [antfu-collective/ni](https://github.com/antfu-collective/ni).
 
 ## Install
 
+Eight binaries — `ni`, `nr`, `nlx`, `nup`, `nun`, `nci`, `nd`, `na` — plus `nu` as a legacy alias for `nup`.
+
+### Homebrew (macOS, Linux)
+
+```bash
+brew install Debbl/tap/nci
+```
+
+### Prebuilt binaries
+
+Grab the archive matching your platform from the [latest release](https://github.com/Debbl/nci/releases/latest):
+
+- `nci-aarch64-apple-darwin.tar.gz` — macOS Apple Silicon
+- `nci-x86_64-apple-darwin.tar.gz` — macOS Intel
+- `nci-x86_64-unknown-linux-gnu.tar.gz` — Linux glibc
+- `nci-x86_64-pc-windows-msvc.zip` — Windows
+
+Each archive ships the same nine binaries. Drop them anywhere on your `PATH`.
+
+### Cargo
+
 ```bash
 cargo install nci
 ```
-
-This installs eight binaries: `ni`, `nr`, `nlx`, `nup`, `nun`, `nci`, `nd`, `na` (plus `nu` as a legacy alias for `nup`).
 
 ## Credits
 

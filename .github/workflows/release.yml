@@ -83,3 +83,31 @@ jobs:
           # release upload. Lets you verify compilation across all targets.
           dry-run: ${{ !startsWith(github.ref, 'refs/tags/v') }}
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  update-homebrew:
+    # Only on tag pushes; dispatch runs don't have archives uploaded.
+    needs: upload-assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      # Updates Formula/nci.rb in Debbl/homebrew-tap: bumps `version`, swaps in
+      # the new release's per-target URLs, and recomputes each sha256 by
+      # downloading the archives the formula references. One invocation covers
+      # all three platforms because the action rewrites every matching url.
+      - uses: mislav/bump-homebrew-formula-action@v3
+        with:
+          formula-name: nci
+          formula-path: Formula/nci.rb
+          homebrew-tap: Debbl/homebrew-tap
+          # Any one of the per-target archives works as the version anchor —
+          # the action discovers the tag/version from this URL and applies it
+          # to every other url in the formula.
+          download-url: https://github.com/Debbl/nci/releases/download/${{ github.ref_name }}/nci-aarch64-apple-darwin.tar.gz
+          commit-message: |
+            nci ${{ github.ref_name }}
+
+            Created by https://github.com/Debbl/nci/actions/runs/${{ github.run_id }}
+        env:
+          # PAT with `contents: write` on Debbl/homebrew-tap. The default
+          # GITHUB_TOKEN can't write to another repo.
+          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
