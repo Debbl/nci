@@ -67,6 +67,10 @@ jobs:
           # All nine binaries get bundled into one archive per target,
           # e.g. nci-x86_64-apple-darwin.tar.gz.
           bin: ni,nr,nci,na,nlx,nu,nup,nun,nd
+          # The default archive name is `$bin-$target`, but `$bin` is
+          # undefined when bundling multiple binaries — the action errors out.
+          # Hard-code the package name as the archive prefix instead.
+          archive: nci-$target
           target: ${{ matrix.target }}
           tar: unix
           zip: windows
