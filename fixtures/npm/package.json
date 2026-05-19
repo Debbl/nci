@@ -1,0 +1,11 @@
+{
+  "name": "playground-npm",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "echo building",
+    "dev": "echo dev",
+    "test": "echo testing",
+    "lint:fix": "echo linting"
+  }
+}

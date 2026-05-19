@@ -1,0 +1,11 @@
+{
+  "name": "playground-yarn-berry",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "yarn@4.5.0",
+  "scripts": {
+    "build": "echo building",
+    "dev": "echo dev",
+    "test": "echo testing"
+  }
+}
