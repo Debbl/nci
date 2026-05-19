@@ -90,65 +90,73 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      # We can't use mislav/bump-homebrew-formula-action here: it only
-      # rewrites the sha256 for the single download-url you hand it, which
-      # leaves the other two targets pointing at the previous release's
-      # sha256 — broken brew install for everyone not on macOS arm64.
-      #
-      # Instead, check the tap out directly and patch all three sha256s in
-      # one atomic commit.
+      # Discovery-based bump: every `sha256 "..."` line in the formula carries
+      # an `# <asset-filename>` marker (oven-sh/homebrew-bun's pattern). The
+      # Python step walks each sha256 line, reads the marker, fetches the
+      # matching `.sha256` sidecar from this release, and substitutes. No
+      # hard-coded target list — adding a platform means adding one row to
+      # the formula, this workflow doesn't change.
       - uses: actions/checkout@v5
         with:
           repository: Debbl/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
-      - name: Bump Formula/nci.rb (version + all 3 sha256s) and push
+      - name: Bump Formula/nci.rb and push to tap
         env:
           TAG: ${{ github.ref_name }}
           RUN_URL: https://github.com/Debbl/nci/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          export VERSION="${TAG#v}"
 
-          # Fetch each target's sha256 sidecar (uploaded by taiki-e/upload-
-          # rust-binary-action). Sidecars are "<hex>  nci-<target>.tar.gz".
-          # Stash each sha as an env var keyed by the underscored target name.
-          for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu; do
-            sha=$(curl -fsSL "https://github.com/Debbl/nci/releases/download/${TAG}/nci-${target}.sha256" | awk '{print $1}')
-            export "SHA_${target//-/_}=${sha}"
-          done
-
-          # Patch the formula. Python over sed because we want to update
-          # sha256 only on the line immediately after each matching url, not
-          # every sha256 in the file.
           python3 - <<'PY'
-          import os, pathlib, re
+          import os, pathlib, re, urllib.request
 
-          version = os.environ["VERSION"]
+          tag = os.environ["TAG"]
+          version = tag.lstrip("v")
+          repo = "Debbl/nci"
           path = pathlib.Path("tap/Formula/nci.rb")
           src = path.read_text()
           original = src
 
+          # Bump the version field. Single-line replace; no anchoring needed.
           src = re.sub(r'version "[^"]+"', f'version "{version}"', src, count=1)
 
-          for target in ("aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"):
-              sha = os.environ[f"SHA_{target.replace('-', '_')}"]
-              pattern = re.compile(
-                  rf'(nci-{re.escape(target)}\.tar\.gz"\s*\n\s*sha256 ")[a-f0-9]+(")',
-                  re.MULTILINE,
+          def sidecar_url(asset: str) -> str:
+              # nci-x86_64-apple-darwin.tar.gz → ...-darwin.sha256
+              base = re.sub(r"\.(tar\.gz|tar\.xz|zip)$", "", asset)
+              return f"https://github.com/{repo}/releases/download/{tag}/{base}.sha256"
+
+          def fetch_sha(asset: str) -> str:
+              with urllib.request.urlopen(sidecar_url(asset)) as r:
+                  return r.read().decode().split()[0]
+
+          # Match: sha256 "<old-hex>" # <asset-filename>
+          # Groups: 1 = leading `sha256 "`, 2 = old hex, 3 = `" # `, 4 = asset
+          line_re = re.compile(r'(sha256 ")([a-f0-9]+)(" # )(\S+)')
+
+          markers = [m.group(4) for m in line_re.finditer(src)]
+          if not markers:
+              raise SystemExit(
+                  "no `sha256 \"...\" # <asset>` markers found in formula — "
+                  "did the formula lose its markers?"
               )
-              src, n = pattern.subn(rf'\g<1>{sha}\g<2>', src)
-              if n != 1:
-                  raise SystemExit(f"expected 1 sha256 match for {target}, found {n}")
+          print(f"found {len(markers)} marked sha256 line(s): {markers}")
+
+          def replace_one(m: re.Match) -> str:
+              asset = m.group(4)
+              new = fetch_sha(asset)
+              print(f"  {asset}: {m.group(2)} -> {new}")
+              return f"{m.group(1)}{new}{m.group(3)}{asset}"
+
+          src = line_re.sub(replace_one, src)
 
           if src == original:
-              raise SystemExit("formula was not modified — bailing instead of pushing an empty commit")
-
+              raise SystemExit(
+                  "formula was not modified — sha256s and version already current?"
+              )
           path.write_text(src)
           PY
 
-          # Commit and push to the tap. Identity here is a bot; the PAT in
-          # the checkout step already configured push auth.
           cd tap
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
