@@ -1,9 +1,8 @@
-use console::style;
+use console::{style, Term};
 use reqwest;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
-use termion::terminal_size;
 
 use crate::utils::{supports_hyperlink, terminal_link};
 
@@ -77,7 +76,12 @@ pub async fn fetch_npm_packages(pattern: &str) -> Result<Vec<Choice>, Box<dyn Er
         pattern
     );
 
-    let (terminal_columns, _) = terminal_size().unwrap_or((80, 0));
+    // `console::Term::size_checked` returns `(rows, cols)`; we only need cols.
+    // Falls back to 80 when not attached to a TTY (e.g. piped output).
+    let terminal_columns = Term::stdout()
+        .size_checked()
+        .map(|(_, cols)| cols)
+        .unwrap_or(80);
 
     let resp = reqwest::get(&registry_link)
         .await?
