@@ -4,7 +4,9 @@ use which::which;
 use crate::detect::Package;
 
 pub fn exclude<T: PartialEq + Clone>(arr: &[T], values: &[T]) -> Vec<T> {
-    arr.iter().filter(|&item| !values.contains(item)).cloned()
+    arr.iter()
+        .filter(|&item| !values.contains(item))
+        .cloned()
         .collect()
 }
 
@@ -81,6 +83,21 @@ pub fn get_package_json(path: &str) -> Package {
         return Package::default();
     }
     Package::default()
+}
+
+/// Format dry-run output without losing the boundaries of spaced arguments.
+pub fn serialize_command(tokens: &[String]) -> String {
+    tokens
+        .iter()
+        .map(|s| {
+            if s.contains(' ') {
+                format!("\"{}\"", s)
+            } else {
+                s.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]

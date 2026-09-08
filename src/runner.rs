@@ -22,7 +22,7 @@ impl Default for DetectOptions {
     fn default() -> Self {
         DetectOptions {
             cwd: env::current_dir().unwrap(),
-            auto_install: false,
+            auto_install: env::var("NI_AUTO_INSTALL").is_ok_and(|v| v == "true"),
             programmatic: false,
         }
     }
@@ -141,11 +141,7 @@ pub fn run(func: Runner, args: Vec<String>, options: &mut DetectOptions) {
     // spawned process all see the same directory. Closures may chdir again
     // for finer-grained changes (e.g. `nr -p` selecting a workspace package).
     if let Err(e) = env::set_current_dir(&options.cwd) {
-        eprintln!(
-            "[ni] couldn't enter {}: {}",
-            options.cwd.display(),
-            e
-        );
+        eprintln!("[ni] couldn't enter {}: {}", options.cwd.display(), e);
         process::exit(1);
     }
 
@@ -177,7 +173,7 @@ pub fn run(func: Runner, args: Vec<String>, options: &mut DetectOptions) {
             // Dry-run: emit the resolved command on stdout and stop.
             let mut tokens = vec![agent];
             tokens.extend(args);
-            println!("{}", tokens.join(" "));
+            println!("{}", crate::utils::serialize_command(&tokens));
             return;
         }
 
@@ -222,11 +218,7 @@ fn print_versions(self_version: &str, options: &DetectOptions) {
     println!("{} {}", pad("node"), style(version_of("node")).green());
 
     match detect(options.clone()) {
-        Some(a) => println!(
-            "{} {}",
-            pad(a.as_str()),
-            style(version_of(a.exec())).blue()
-        ),
+        Some(a) => println!("{} {}", pad(a.as_str()), style(version_of(a.exec())).blue()),
         None => println!("{} no lock file", pad("agent")),
     }
 
@@ -294,12 +286,7 @@ pub fn execa_command(agent: &str, args: Option<Vec<String>>) -> Result<(), io::E
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
-        .map_err(|e| {
-            io::Error::new(
-                e.kind(),
-                format!("failed to spawn `{}`: {}", agent, e),
-            )
-        })?
+        .map_err(|e| io::Error::new(e.kind(), format!("failed to spawn `{}`: {}", agent, e)))?
         .wait()?;
 
     // Propagate the agent's exit code so CI / shell scripts can react to

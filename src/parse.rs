@@ -34,12 +34,22 @@ pub fn construct(value: AgentCommandValue, args: &[String]) -> Option<CommandTup
         }
         AgentCommandValue::DashDash(agent, sub) => {
             let mut rest: Vec<String> = vec![sub.to_string()];
-            if !args.is_empty() {
-                rest.push(args[0].clone());
-                if args.len() > 1 {
-                    rest.push("--".to_string());
-                    rest.extend(args[1..].iter().cloned());
+            let value_flags: &[&str] = match (agent, sub) {
+                ("npm", "run") => &["-w", "--workspace"],
+                ("pnpm", "run") => &["-F", "--filter"],
+                _ => &[],
+            };
+            let script_index = args.iter().enumerate().position(|(i, arg)| {
+                !arg.starts_with('-') && (i == 0 || !value_flags.contains(&args[i - 1].as_str()))
+            });
+            if let Some(index) = script_index {
+                rest.extend_from_slice(&args[..=index]);
+                if index + 1 < args.len() {
+                    rest.push("--".into());
+                    rest.extend_from_slice(&args[index + 1..]);
                 }
+            } else {
+                rest.extend_from_slice(args);
             }
             Some((agent.to_string(), rest))
         }
@@ -73,13 +83,25 @@ pub fn parse_ni(agent: Agent, args: Vec<String>, ctx: Option<RunnerContext>) -> 
     if agent == Agent::Npm {
         args = args
             .iter()
-            .map(|i| if i == "-P" { "--omit=dev".into() } else { i.clone() })
+            .map(|i| {
+                if i == "-P" {
+                    "--omit=dev".into()
+                } else {
+                    i.clone()
+                }
+            })
             .collect();
     }
     if args.iter().any(|i| i == "-P") {
         args = args
             .iter()
-            .map(|i| if i == "-P" { "--production".into() } else { i.clone() })
+            .map(|i| {
+                if i == "-P" {
+                    "--production".into()
+                } else {
+                    i.clone()
+                }
+            })
             .collect();
     }
     if args.contains(&GLOBAL.into()) {
@@ -145,6 +167,13 @@ pub fn parse_nun(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> C
 }
 
 pub fn parse_nlx(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> CommandTuple {
+    if args.iter().any(|a| a == "--local") {
+        return get_command(
+            &agent,
+            AgentCommand::ExecuteLocal,
+            exclude(&args, &["--local".into()]),
+        );
+    }
     get_command(&agent, AgentCommand::Execute, args)
 }
 
@@ -166,15 +195,27 @@ pub fn parse_na(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> Co
 pub fn parse_nd(agent: Agent, args: Vec<String>, _: Option<RunnerContext>) -> CommandTuple {
     // pnpm uses `--check`, npm uses `--dry-run`; expose both via `-c`.
     let mut args = args;
-    if agent == Agent::Pnpm || agent == Agent::Pnpm6 {
+    if matches!(agent, Agent::Pnpm | Agent::Pnpm6 | Agent::Aube) {
         args = args
             .iter()
-            .map(|i| if i == "-c" { "--check".into() } else { i.clone() })
+            .map(|i| {
+                if i == "-c" {
+                    "--check".into()
+                } else {
+                    i.clone()
+                }
+            })
             .collect();
     } else if agent == Agent::Npm {
         args = args
             .iter()
-            .map(|i| if i == "-c" { "--dry-run".into() } else { i.clone() })
+            .map(|i| {
+                if i == "-c" {
+                    "--dry-run".into()
+                } else {
+                    i.clone()
+                }
+            })
             .collect();
     }
     get_command(&agent, AgentCommand::Dedupe, args)

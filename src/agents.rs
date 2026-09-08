@@ -5,6 +5,9 @@ pub enum Agent {
     YarnBerry,
     Pnpm,
     Pnpm6,
+    PnpmRush,
+    Aube,
+    Nub,
     Bun,
     Deno,
 }
@@ -19,6 +22,9 @@ impl Agent {
             Agent::Pnpm6 => "pnpm@6",
             Agent::Bun => "bun",
             Agent::Deno => "deno",
+            Agent::PnpmRush => "pnpm-rush",
+            Agent::Aube => "aube",
+            Agent::Nub => "nub",
         }
     }
 
@@ -27,6 +33,7 @@ impl Agent {
         match self {
             Agent::YarnBerry => "yarn",
             Agent::Pnpm6 => "pnpm",
+            Agent::PnpmRush => "rush-pnpm",
             other => other.as_str(),
         }
     }
@@ -40,6 +47,9 @@ impl Agent {
             Agent::Pnpm6 => &PNPM6_COMMAND,
             Agent::Bun => &BUN_COMMAND,
             Agent::Deno => &DENO_COMMAND,
+            Agent::PnpmRush => &PNPM_RUSH_COMMAND,
+            Agent::Aube => &AUBE_COMMAND,
+            Agent::Nub => &NUB_COMMAND,
         }
     }
 }
@@ -57,7 +67,7 @@ pub enum Fragment {
 /// - `None` ≡ `null` (unsupported by this agent)
 /// - `Plain` ≡ `[lit, lit, 0, ...]`
 /// - `DashDash` ≡ `dashDashArg(agent, sub)` — inserts a `--` separator between
-///   the first arg and the remaining args when more than one arg is present.
+///   the script and its forwarded args, preserving leading agent flags.
 #[derive(Copy, Clone, Debug)]
 pub enum AgentCommandValue {
     None,
@@ -135,8 +145,8 @@ macro_rules! cmd {
 }
 
 /// `dashDashArg(agent, sub)` from upstream: emits
-/// `[agent, sub, args[0], --, ...args[1..]]` when args.len() > 1, otherwise
-/// `[agent, sub, args[0]]`.
+/// `[agent, sub, ...flags, script, --, ...script_args]`, with no separator
+/// when the script has no forwarded arguments.
 macro_rules! dd {
     ($agent:literal, $sub:literal) => {
         AgentCommandValue::DashDash($agent, $sub)
@@ -254,4 +264,52 @@ pub const DENO_COMMAND: AgentCommands = AgentCommands {
     execute_local: cmd!["deno", "task", "--eval", _],
     uninstall: cmd!["deno", "remove", _],
     global_uninstall: cmd!["deno", "uninstall", "-g", _],
+};
+
+pub const PNPM_RUSH_COMMAND: AgentCommands = AgentCommands {
+    agent: cmd!["rush-pnpm", _],
+    run: cmd!["rush-pnpm", "run", _],
+    install: cmd!["rush-pnpm", "i", _],
+    frozen: cmd!["rush-pnpm", "i", "--frozen-lockfile", _],
+    global: cmd!["rush-pnpm", "add", "-g", _],
+    add: cmd!["rush-pnpm", "add", _],
+    upgrade: cmd!["rush-pnpm", "update", _],
+    upgrade_interactive: cmd!["rush-pnpm", "update", "-i", _],
+    dedupe: cmd!["rush-pnpm", "dedupe", _],
+    execute: cmd!["rush-pnpm", "dlx", _],
+    execute_local: cmd!["rush-pnpm", "exec", _],
+    uninstall: cmd!["rush-pnpm", "remove", _],
+    global_uninstall: cmd!["rush-pnpm", "remove", "--global", _],
+};
+
+pub const AUBE_COMMAND: AgentCommands = AgentCommands {
+    agent: cmd!["aube", _],
+    run: cmd!["aube", "run", _],
+    install: cmd!["aube", "install", _],
+    frozen: cmd!["aube", "install", "--frozen-lockfile", _],
+    global: cmd!["aube", "add", "-g", _],
+    add: cmd!["aube", "add", _],
+    upgrade: cmd!["aube", "update", _],
+    upgrade_interactive: cmd!["aube", "update", "-i", _],
+    dedupe: cmd!["aube", "dedupe", _],
+    execute: cmd!["aube", "dlx", _],
+    execute_local: cmd!["aube", "exec", _],
+    uninstall: cmd!["aube", "remove", _],
+    global_uninstall: cmd!["aube", "remove", "-g", _],
+};
+
+pub const NUB_COMMAND: AgentCommands = AgentCommands {
+    agent: cmd!["nub", _],
+    run: cmd!["nub", "run", _],
+    install: cmd!["nub", "install", _],
+    frozen: cmd!["nub", "install", "--frozen-lockfile", _],
+    global: cmd!["nub", "add", "-g", _],
+    add: cmd!["nub", "add", _],
+    upgrade: cmd!["nub", "update", _],
+    upgrade_interactive: cmd!["nub", "update", "-i", _],
+    dedupe: cmd!["nub", "dedupe", _],
+    execute: cmd!["nubx", _],
+    execute_local: cmd!["nub", "exec", _],
+    uninstall: cmd!["nub", "remove", _],
+    global_uninstall: cmd!["nub", "remove", "-g", _],
 };

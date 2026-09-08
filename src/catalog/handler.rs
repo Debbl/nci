@@ -2,23 +2,20 @@
 //! normal `parse_ni` flow. When this returns `Some(cmd)`, the caller skips
 //! `parse_ni` and uses the catalog-resolved command instead.
 
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 
 use console::style;
 use tokio::runtime::Runtime;
 
 use crate::{
-    agents::Agent,
-    config::get_catalog,
-    fetch::fetch_latest_version,
-    parse::CommandTuple,
+    agents::Agent, config::get_catalog, fetch::fetch_latest_version, parse::CommandTuple,
     runner::RunnerContext,
 };
 
 use super::{
     catalog_ref,
     package_json::{find_closest_package_json, update_package_json_catalog_refs, DepType, Entry},
-    prompt::prompt_select_catalog,
+    prompt::{prompt_select_catalog_with_previous, CatalogSelection},
     provider_for, CatalogConfig,
 };
 
@@ -33,6 +30,28 @@ pub fn handle_catalog_install(
     if !get_catalog() {
         return None;
     }
+    run_catalog_install(
+        agent,
+        args,
+        ctx,
+        prompt_select_catalog_with_previous,
+        fetch_latest,
+    )
+}
+
+fn run_catalog_install(
+    agent: &Agent,
+    args: &[String],
+    ctx: Option<&RunnerContext>,
+    mut select: impl FnMut(
+        &CatalogConfig,
+        &str,
+        bool,
+        Option<&Option<String>>,
+        bool,
+    ) -> CatalogSelection,
+    mut latest: impl FnMut(&str) -> Result<String, String>,
+) -> Option<CommandTuple> {
     let provider = provider_for(agent)?;
 
     let has_workspace_flag = args.iter().any(|a| a == "-w" || a == "--workspace");
@@ -56,7 +75,9 @@ pub fn handle_catalog_install(
     let mut catalog_entries: Vec<(String, String)> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
 
-    for pkg in &packages {
+    let mut previous: Option<Option<String>> = None;
+    let mut apply_to_rest: Option<Option<String>> = None;
+    for (index, pkg) in packages.iter().enumerate() {
         if let Some(existing) = config.find_package(pkg) {
             let name = existing.name.clone();
             if !programmatic {
@@ -70,12 +91,27 @@ pub fn handle_catalog_install(
             catalog_entries.push((pkg.clone(), catalog_ref(&name)));
             continue;
         }
-        let Some(target_name) = prompt_select_catalog(&config, pkg, programmatic) else {
+        let target_name = if let Some(target) = &apply_to_rest {
+            target.clone()
+        } else {
+            let has_remaining = packages[index + 1..]
+                .iter()
+                .any(|p| config.find_package(p).is_none());
+            let selection = select(&config, pkg, programmatic, previous.as_ref(), has_remaining);
+            if !programmatic {
+                previous = Some(selection.catalog_name.clone());
+                if selection.apply_to_rest {
+                    apply_to_rest = Some(selection.catalog_name.clone());
+                }
+            }
+            selection.catalog_name
+        };
+        let Some(target_name) = target_name else {
             skipped.push(pkg.clone());
             continue;
         };
-        // Fetch latest from npm, write into pnpm-workspace.yaml.
-        let version = match fetch_latest(pkg) {
+        // Fetch latest from npm and persist in the provider's catalog file.
+        let version = match latest(pkg) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!(
@@ -88,10 +124,11 @@ pub fn handle_catalog_install(
                 continue;
             }
         };
-        if let Err(e) = add_to_workspace(&mut config, &target_name, pkg, &version) {
+        if let Err(e) = config.add_package(&target_name, pkg, &version) {
             eprintln!(
-                "{} failed to update pnpm-workspace.yaml: {}",
+                "{} failed to update {}: {}",
                 style("\u{2717}").red(),
+                config.file_path.display(),
                 e
             );
             skipped.push(pkg.clone());
@@ -143,7 +180,13 @@ pub fn handle_catalog_install(
     use crate::agents::AgentCommand;
     if !skipped.is_empty() {
         let mut add_args = skipped;
-        add_args.extend(flags);
+        add_args.extend(flags.into_iter().map(|f| {
+            if *agent == Agent::Bun && f == "-D" {
+                "-d".into()
+            } else {
+                f
+            }
+        }));
         return resolve(agent, AgentCommand::Add, add_args);
     }
     resolve(agent, AgentCommand::Install, Vec::new())
@@ -191,36 +234,130 @@ fn fetch_latest(pkg: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
-fn add_to_workspace(
-    config: &mut CatalogConfig,
-    catalog_name: &str,
-    pkg: &str,
-    version: &str,
-) -> std::io::Result<()> {
-    let original = fs::read_to_string(&config.file_path)?;
-    let updated = super::yaml::insert_catalog_entry(&original, catalog_name, pkg, version);
-    fs::write(&config.file_path, updated)?;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
 
-    // Update in-memory mirror.
-    if let Some(info) = config
-        .catalogs
-        .iter_mut()
-        .find(|c| c.name == catalog_name)
-    {
-        info.packages
-            .insert(pkg.to_string(), version.to_string());
-    } else {
-        let mut packages = indexmap::IndexMap::new();
-        packages.insert(pkg.to_string(), version.to_string());
-        config.catalogs.push(super::CatalogInfo {
-            name: catalog_name.to_string(),
-            packages,
-        });
-        if catalog_name == "default" {
-            config.has_default_catalog = true;
-        } else {
-            config.has_named_catalogs = true;
+    #[test]
+    fn batch_catalog_selection_reuses_previous_and_applies_to_remaining() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("pnpm-workspace.yaml"),
+            "catalogs:\n  prod:\n    react: ^18\n  dev: {}\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("package.json"), "{}").unwrap();
+        let ctx = RunnerContext {
+            cwd: dir.path().into(),
+            programmatic: false,
+            has_lock: true,
+        };
+        let args = ["react", "lodash", "axios", "dayjs"].map(String::from);
+        let mut calls = 0;
+        let command = run_catalog_install(
+            &Agent::Pnpm,
+            &args,
+            Some(&ctx),
+            |_, pkg, _, previous, remaining| {
+                calls += 1;
+                if calls == 1 {
+                    assert_eq!(pkg, "lodash");
+                    assert_eq!(previous, None); // Existing react must not set previous.
+                } else {
+                    assert_eq!(pkg, "axios");
+                    assert_eq!(previous, Some(&Some("dev".into())));
+                }
+                assert!(remaining);
+                CatalogSelection {
+                    catalog_name: Some("dev".into()),
+                    apply_to_rest: calls == 2,
+                }
+            },
+            |_| Ok("^1.0.0".into()),
+        )
+        .unwrap();
+        assert_eq!(calls, 2);
+        assert_eq!(command, ("pnpm".into(), vec!["i".into()]));
+        let pkg: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(dir.path().join("package.json")).unwrap())
+                .unwrap();
+        assert_eq!(pkg["dependencies"]["react"], "catalog:prod");
+        for name in ["lodash", "axios", "dayjs"] {
+            assert_eq!(pkg["dependencies"][name], "catalog:dev");
+            let config = super::super::detect_pnpm_catalogs(dir.path()).unwrap();
+            assert_eq!(config.find_package(name).unwrap().packages[name], "^1.0.0");
         }
     }
-    Ok(())
+
+    #[test]
+    fn batch_can_reuse_skip_without_affecting_existing_catalog_packages() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("pnpm-workspace.yaml"),
+            "catalogs:\n  prod:\n    react: ^18\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("package.json"), "{}").unwrap();
+        let ctx = RunnerContext {
+            cwd: dir.path().into(),
+            programmatic: false,
+            has_lock: true,
+        };
+        let args = ["one", "two", "three", "react"].map(String::from);
+        let mut calls = 0;
+        let command = run_catalog_install(
+            &Agent::Pnpm,
+            &args,
+            Some(&ctx),
+            |_, _, _, previous, remaining| {
+                calls += 1;
+                if calls == 2 {
+                    assert_eq!(previous, Some(&None));
+                }
+                assert!(remaining);
+                CatalogSelection {
+                    catalog_name: None,
+                    apply_to_rest: calls == 2,
+                }
+            },
+            |_| panic!("skipped packages must not fetch versions"),
+        )
+        .unwrap();
+        assert_eq!(calls, 2);
+        assert_eq!(
+            command,
+            (
+                "pnpm".into(),
+                ["add", "one", "two", "three"].map(String::from).to_vec()
+            )
+        );
+    }
+
+    #[test]
+    fn last_unknown_package_has_no_apply_to_remaining_shortcut() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("pnpm-workspace.yaml"),
+            "catalogs:\n  prod:\n    react: ^18\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("package.json"), "{}").unwrap();
+        let ctx = RunnerContext {
+            cwd: dir.path().into(),
+            programmatic: false,
+            has_lock: true,
+        };
+        run_catalog_install(
+            &Agent::Pnpm,
+            &["new".into(), "react".into()],
+            Some(&ctx),
+            |_, _, _, _, remaining| {
+                assert!(!remaining);
+                CatalogSelection::default()
+            },
+            |_| panic!("skipped package"),
+        )
+        .unwrap();
+    }
 }

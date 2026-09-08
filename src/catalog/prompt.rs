@@ -7,44 +7,112 @@ use inquire::{Select, Text};
 use super::CatalogConfig;
 use crate::fuzzy;
 
-/// Pick a catalog for `pkg`. Behaviour mirrors upstream:
-///
-/// - Only the default catalog exists → no prompt, return `Some("default")`.
-/// - Multiple catalogs → prompt with the existing names plus "create new"
-///   and "skip" choices.
-/// - `programmatic` → never prompt, return `None`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CatalogSelection {
+    pub catalog_name: Option<String>,
+    pub apply_to_rest: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Choice {
+    Catalog(String),
+    Same(Option<String>),
+    Rest(Option<String>),
+    Create,
+    Skip,
+}
+
+impl std::fmt::Display for Choice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Catalog(name) => write!(f, "{}", name),
+            Self::Same(name) => write!(
+                f,
+                "{} (same as previous)",
+                name.as_deref().unwrap_or("skip")
+            ),
+            Self::Rest(name) => write!(
+                f,
+                "{} (apply to all remaining)",
+                name.as_deref().unwrap_or("skip")
+            ),
+            Self::Create => write!(f, "[create new catalog]"),
+            Self::Skip => write!(f, "[skip — install without catalog]"),
+        }
+    }
+}
+
+fn choices(
+    config: &CatalogConfig,
+    previous: Option<&Option<String>>,
+    has_remaining: bool,
+) -> Vec<Choice> {
+    let mut choices = Vec::new();
+    if let Some(previous) = previous {
+        choices.push(Choice::Same(previous.clone()));
+        if has_remaining {
+            choices.push(Choice::Rest(previous.clone()));
+        }
+    }
+    choices.extend(
+        config
+            .catalogs
+            .iter()
+            .map(|c| Choice::Catalog(c.name.clone())),
+    );
+    choices.extend([Choice::Create, Choice::Skip]);
+    choices
+}
+
 pub fn prompt_select_catalog(
     config: &CatalogConfig,
     pkg: &str,
     programmatic: bool,
 ) -> Option<String> {
+    prompt_select_catalog_with_previous(config, pkg, programmatic, None, false).catalog_name
+}
+
+pub fn prompt_select_catalog_with_previous(
+    config: &CatalogConfig,
+    pkg: &str,
+    programmatic: bool,
+    previous: Option<&Option<String>>,
+    has_remaining: bool,
+) -> CatalogSelection {
     if config.has_default_catalog && !config.has_named_catalogs {
-        return Some("default".to_string());
+        return CatalogSelection {
+            catalog_name: Some("default".into()),
+            apply_to_rest: false,
+        };
     }
     if programmatic {
-        return None;
+        return CatalogSelection::default();
     }
-
-    let mut choices: Vec<String> = config.catalogs.iter().map(|c| c.name.clone()).collect();
-    choices.push("[create new catalog]".to_string());
-    choices.push("[skip — install without catalog]".to_string());
-
     let message = format!("select catalog for {}", style(pkg).yellow());
-    let filter = |input: &str, opt: &String, _opt_str: &str, _idx: usize| -> bool {
-        fuzzy::matches(input, opt)
-    };
-    let chosen = Select::new(&message, choices.clone())
+    let filter =
+        |input: &str, _opt: &Choice, label: &str, _idx: usize| fuzzy::matches(input, label);
+    let chosen = Select::new(&message, choices(config, previous, has_remaining))
         .with_filter(&filter)
-        .prompt()
-        .ok()?;
-
-    if chosen.starts_with("[skip") {
-        return None;
+        .prompt();
+    match chosen {
+        Ok(Choice::Catalog(name)) => CatalogSelection {
+            catalog_name: Some(name),
+            apply_to_rest: false,
+        },
+        Ok(Choice::Same(name)) => CatalogSelection {
+            catalog_name: name,
+            apply_to_rest: false,
+        },
+        Ok(Choice::Rest(name)) => CatalogSelection {
+            catalog_name: name,
+            apply_to_rest: true,
+        },
+        Ok(Choice::Create) => CatalogSelection {
+            catalog_name: prompt_new_catalog_name(),
+            apply_to_rest: false,
+        },
+        _ => CatalogSelection::default(),
     }
-    if chosen.starts_with("[create new") {
-        return prompt_new_catalog_name();
-    }
-    Some(chosen)
 }
 
 fn prompt_new_catalog_name() -> Option<String> {
@@ -108,5 +176,21 @@ mod tests {
             prompt_select_catalog(&c, "react", false),
             Some("default".to_string())
         );
+    }
+
+    #[test]
+    fn shortcuts_precede_catalogs_and_preserve_skip_selection() {
+        let config = cfg(false, &["prod", "dev"]);
+        assert_eq!(
+            choices(&config, None, true)[0],
+            Choice::Catalog("prod".into())
+        );
+        let previous = Some("dev".into());
+        let list = choices(&config, Some(&previous), true);
+        assert_eq!(list[0], Choice::Same(previous.clone()));
+        assert_eq!(list[1], Choice::Rest(previous));
+        let list = choices(&config, Some(&None), false);
+        assert_eq!(list[0], Choice::Same(None));
+        assert!(!list.iter().any(|c| matches!(c, Choice::Rest(_))));
     }
 }

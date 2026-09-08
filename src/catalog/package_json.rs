@@ -77,22 +77,30 @@ pub fn update_package_json_catalog_refs(
     dep_type: DepType,
 ) -> std::io::Result<()> {
     let content = fs::read_to_string(path)?;
-    let indent = detect_indent(&content);
     let mut data: Value = serde_json::from_str(&content)?;
 
     let key = dep_type.as_key();
-    let obj = data
-        .as_object_mut()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "package.json root is not an object"))?;
+    let obj = data.as_object_mut().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "package.json root is not an object",
+        )
+    })?;
     let deps = obj
         .entry(key.to_string())
         .or_insert_with(|| Value::Object(serde_json::Map::new()));
-    let deps_map = deps
-        .as_object_mut()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "deps field is not an object"))?;
+    let deps_map = deps.as_object_mut().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "deps field is not an object",
+        )
+    })?;
 
     for entry in entries {
-        deps_map.insert(entry.name.to_string(), Value::String(entry.catalog_ref.to_string()));
+        deps_map.insert(
+            entry.name.to_string(),
+            Value::String(entry.catalog_ref.to_string()),
+        );
     }
 
     // Sort by key. serde_json's Map preserves insertion order with the
@@ -111,6 +119,11 @@ pub fn update_package_json_catalog_refs(
     }
     obj.insert(key.to_string(), Value::Object(sorted));
 
+    write_json(path, &content, &data)
+}
+
+pub(super) fn write_json(path: &Path, original: &str, data: &Value) -> std::io::Result<()> {
+    let indent = detect_indent(original);
     let mut buf = Vec::new();
     let formatter = serde_json::ser::PrettyFormatter::with_indent(indent.as_bytes());
     let mut ser = serde_json::Serializer::with_formatter(&mut buf, formatter);
@@ -197,6 +210,9 @@ mod tests {
         )
         .unwrap();
         let got = fs::read_to_string(&p).unwrap();
-        assert!(got.contains("        \"react\": \"catalog:\""), "got:\n{got}");
+        assert!(
+            got.contains("        \"react\": \"catalog:\""),
+            "got:\n{got}"
+        );
     }
 }

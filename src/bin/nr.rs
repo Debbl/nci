@@ -9,7 +9,7 @@ use nci::{
         completion_suggestions, RAW_BASH_COMPLETION_SCRIPT, RAW_FISH_COMPLETION_SCRIPT,
         RAW_ZSH_COMPLETION_SCRIPT,
     },
-    config::{get_run_agent, RunAgent},
+    config::{get_no_last_command, get_run_agent, RunAgent},
     fuzzy,
     monorepo::{load_packages, PackageEntry},
     parse::parse_nr,
@@ -32,6 +32,31 @@ impl Display for ScriptRaw {
         let item = format!("{}    {}", style(key).cyan(), style(description).dim());
         write!(f, "{}", item)
     }
+}
+
+fn script_choices(pkg: nci::detect::Package, last: Option<&str>, no_last: bool) -> Vec<ScriptRaw> {
+    let scripts = pkg.scripts.unwrap_or_default();
+    let info = pkg.scripts_info.unwrap_or_default();
+    let mut choices: Vec<_> = scripts
+        .iter()
+        .filter(|(key, _)| !key.starts_with('?'))
+        .map(|(key, cmd)| ScriptRaw {
+            key: key.clone(),
+            _cmd: cmd.clone(),
+            description: info
+                .get(key)
+                .or_else(|| scripts.get(&format!("?{}", key)))
+                .unwrap_or(cmd)
+                .clone(),
+        })
+        .collect();
+    if !no_last {
+        if let Some(index) = choices.iter().position(|s| Some(s.key.as_str()) == last) {
+            let previous = choices.remove(index);
+            choices.insert(0, previous);
+        }
+    }
+    choices
 }
 
 fn main() {
@@ -89,10 +114,7 @@ fn main() {
             // script picker (which reads ctx.cwd/package.json) and the
             // eventual spawned `npm run …` see the new directory.
             if args.first().map(|s| s.as_str()) == Some("-p") {
-                let script_filter = args
-                    .get(1)
-                    .cloned()
-                    .filter(|s| !s.starts_with('-'));
+                let script_filter = args.get(1).cloned().filter(|s| !s.starts_with('-'));
                 let base = ctx
                     .as_ref()
                     .map(|c| c.cwd.clone())
@@ -105,13 +127,10 @@ fn main() {
                 let selected = if pkgs.len() == 1 {
                     pkgs.remove(0)
                 } else {
-                    let filter = |input: &str,
-                                  opt: &PackageEntry,
-                                  _opt_str: &str,
-                                  _idx: usize|
-                     -> bool {
-                        fuzzy::matches(input, &opt.name)
-                    };
+                    let filter =
+                        |input: &str, opt: &PackageEntry, _opt_str: &str, _idx: usize| -> bool {
+                            fuzzy::matches(input, &opt.name)
+                        };
                     match Select::new("select a package", pkgs)
                         .with_filter(&filter)
                         .prompt()
@@ -120,8 +139,7 @@ fn main() {
                         Err(_) => process::exit(1),
                     }
                 };
-                env::set_current_dir(&selected.cwd)
-                    .expect("change to selected package directory");
+                env::set_current_dir(&selected.cwd).expect("change to selected package directory");
                 if let Some(c) = ctx.as_mut() {
                     c.cwd = selected.cwd.clone();
                 }
@@ -147,35 +165,11 @@ fn main() {
                             let storage_guard = STORAGE.lock();
                             let storage = storage_guard.as_ref().unwrap();
                             let pkg = get_package_json(path);
-                            let scripts = pkg.scripts.unwrap_or_default();
-                            let scripts_info = pkg.scripts_info.unwrap_or_default();
-                            let names = scripts
-                                .iter()
-                                .map(|(key, value)| [key, value])
-                                .collect::<Vec<[&String; 2]>>();
-                            let raw = names
-                                .iter()
-                                .filter(|x| !x[0].starts_with("?"))
-                                .map(|[key, value]| {
-                                    let key = key.to_string();
-                                    let cmd = value.to_string();
-                                    let description = scripts_info
-                                        .get(&key)
-                                        .map_or_else(|| cmd.clone(), |v| v.to_string());
-                                    ScriptRaw {
-                                        key,
-                                        _cmd: cmd,
-                                        description,
-                                    }
-                                })
-                                .collect::<Vec<ScriptRaw>>();
-
-                            if let Some(command) = &storage.last_run_command {
-                                let last = raw.iter().find(|x| command == &x.key);
-                                if last.is_some() {
-                                    // raw.insert(0, last.clone())
-                                };
-                            }
+                            let raw = script_choices(
+                                pkg,
+                                storage.last_run_command.as_deref(),
+                                get_no_last_command(),
+                            );
 
                             // fuzzy filter against `key + description`,
                             // matching upstream's fzf selector.
@@ -184,8 +178,7 @@ fn main() {
                                           _opt_str: &str,
                                           _idx: usize|
                              -> bool {
-                                let combined =
-                                    format!("{} {}", opt.key, opt.description);
+                                let combined = format!("{} {}", opt.key, opt.description);
                                 fuzzy::matches(input, &combined)
                             };
                             let ans = Select::new("script to run:", raw)
@@ -200,6 +193,9 @@ fn main() {
                         }
                     }
                 }
+            }
+            if args.is_empty() {
+                args.push("start".into());
             }
             let storage_guard = STORAGE.lock();
             let mut storage = storage_guard.as_ref().unwrap().clone();
@@ -236,4 +232,35 @@ fn main() {
         },
         None,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn picker_honors_history_and_description_precedence() {
+        let pkg = || {
+            serde_json::from_str(r#"{
+            "scripts": {"build":"tsc", "dev":"vite", "?build":"Build description", "?dev":"Dev description"},
+            "scripts-info": {"dev":"Override description"}
+        }"#).unwrap()
+        };
+        let choices = script_choices(pkg(), Some("dev"), false);
+        assert_eq!(
+            choices.iter().map(|s| s.key.as_str()).collect::<Vec<_>>(),
+            ["dev", "build"]
+        );
+        assert_eq!(choices[0].description, "Override description");
+        assert_eq!(choices[1].description, "Build description");
+        let choices = script_choices(pkg(), Some("dev"), true);
+        assert_eq!(
+            choices.iter().map(|s| s.key.as_str()).collect::<Vec<_>>(),
+            ["build", "dev"]
+        );
+        assert_eq!(
+            script_choices(pkg(), Some("missing"), false)[0].key,
+            "build"
+        );
+    }
 }

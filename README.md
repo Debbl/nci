@@ -4,7 +4,7 @@ A Rust port of [antfu-collective/ni](https://github.com/antfu-collective/ni).
 
 **nci** — use the right package manager.
 
-<a href='https://docs.npmjs.com/cli/v6/commands/npm'>npm</a> · <a href='https://yarnpkg.com'>yarn</a> · <a href='https://pnpm.io/'>pnpm</a> · <a href='https://bun.sh/'>bun</a> · <a href='https://deno.land/'>deno</a>
+<a href='https://docs.npmjs.com/cli/v6/commands/npm'>npm</a> · <a href='https://yarnpkg.com'>yarn</a> · <a href='https://pnpm.io/'>pnpm</a> · <a href='https://bun.sh/'>bun</a> · <a href='https://deno.land/'>deno</a> · <a href='https://aube.en.dev/'>aube</a> · <a href='https://nubjs.com/'>nub</a> · <a href='https://rushjs.io/'>Rush (rush-pnpm)</a>
 
 ## Install
 
@@ -112,9 +112,15 @@ ni -i
 ```
 
 <details>
-<summary>pnpm catalogs</summary>
+<summary>Workspace catalogs (pnpm, Yarn Berry, Bun)</summary>
 
-When a pnpm workspace declares [catalogs](https://pnpm.io/catalogs) in `pnpm-workspace.yaml`, `nci` writes `catalog:` references into `package.json` instead of pinning versions:
+When a workspace declares catalogs, `nci` writes `catalog:` references into `package.json` instead of pinning versions. Supported locations:
+
+- pnpm: `pnpm-workspace.yaml`
+- Yarn Berry: `.yarnrc.yml`
+- Bun: the workspace root's `package.json`, either at the top level or inside `workspaces` (nested catalogs take precedence)
+
+For example, with pnpm:
 
 ```bash
 # pnpm-workspace.yaml:
@@ -135,6 +141,8 @@ ni lodash
 # → runs `pnpm i`
 ```
 
+When installing multiple new packages, subsequent prompts offer **same as previous** and **apply to all remaining**, including the choice to skip catalogs. Packages already in a catalog keep their existing catalog.
+
 The dependency flag picks the right `package.json` section:
 
 ```bash
@@ -148,7 +156,20 @@ ni typescript -D
 ni react -w
 ```
 
-To disable catalog mode, set `catalog=false` in `~/.nirc` or `NI_CATALOG=false`.
+Bun example:
+
+```json
+{
+  "workspaces": {
+    "packages": ["packages/*"],
+    "catalogs": { "prod": { "react": "^18.3.0" } }
+  }
+}
+```
+
+`ni react` writes `"react": "catalog:prod"` to the current package and runs `bun install`. New catalog entries are written back to the original catalog location.
+
+To disable catalog mode for any supported agent, set `catalog=false` in `~/.nirc` or `NI_CATALOG=false`.
 
 </details>
 
@@ -170,7 +191,8 @@ nr dev --port=3000
 nr
 
 # interactive picker (fzf-style fuzzy filtering)
-# supports https://www.npmjs.com/package/npm-scripts-info convention
+# descriptions: scripts-info, then scripts["?name"], then the script command
+# the last-run script is listed first unless noLastCommand=true
 ```
 
 ```bash
@@ -220,6 +242,21 @@ nlx vitest
 # bun x vitest
 # deno x vitest
 ```
+
+```bash
+nlx --local vitest
+
+# npx vitest
+# yarn exec vitest
+# pnpm exec vitest
+# bun x vitest
+# deno task --eval vitest
+# aube exec vitest
+# nub exec vitest
+# rush-pnpm exec vitest
+```
+
+`--local` uses the agent's local execution command; ordinary `nlx` uses its download-and-execute command (`dlx`, `bun x`, `nubx`, etc.).
 
 <br>
 
@@ -293,7 +330,7 @@ nci
 # deno install --frozen
 ```
 
-If the detected agent isn't installed, `nci` will offer to globally install it for you (or just do it when `NI_AUTO_INSTALL=true`).
+`nci` automatically installs a missing detected agent. Other commands prompt first; set `NI_AUTO_INSTALL=true` to allow automatic installation there too. Programmatic mode never installs missing agents during detection. Aube uses the npm package `@endevco/aube`.
 
 <br>
 
@@ -378,7 +415,7 @@ runAgent=node
 ; wrap every spawned command with `sfw <agent> <args>`
 useSfw=true
 
-; pnpm catalog support; set to false to opt out
+; pnpm / Yarn Berry / Bun catalog support; set to false to opt out
 catalog=true
 
 ; suppress the `nr` picker's behaviour of surfacing the last-run script
@@ -424,16 +461,15 @@ asdf global ni latest
 
 ### How?
 
-`nci` assumes you work with lockfiles. Before running, it inspects (in order of precedence):
+Detection follows upstream ni v30.5.0 and `package-manager-detector` 1.8.0. A `deno.json` / `deno.jsonc` in the target directory selects Deno first. Otherwise, `nci` searches the current directory and then each parent, so the nearest project's metadata wins.
 
-1. `deno.json` / `deno.jsonc` → deno
-2. `bun.lock` / `bun.lockb` → bun
-3. `pnpm-lock.yaml` → pnpm
-4. `yarn.lock` → yarn
-5. `package-lock.json` / `npm-shrinkwrap.json` → npm
-6. `packageManager` field in `package.json`
+Within each directory:
 
-`yarn@>1` is treated as Yarn Berry; `pnpm@<7` is treated as pnpm 6. The full command table lives in [`src/agents.rs`](src/agents.rs) and mirrors [`package-manager-detector`'s commands](https://github.com/antfu-collective/package-manager-detector/blob/main/src/commands.ts).
+1. `rush.json` selects `pnpm-rush`, which executes commands through `rush-pnpm`.
+2. `packageManager` in `package.json` takes precedence over that directory's lockfile; `devEngines.packageManager` is used when `packageManager` is absent.
+3. Otherwise, marker priority is: `aube-lock.yaml` / `aube-workspace.yaml`, `bun.lock` / `bun.lockb`, `deno.lock`, `nub.lock`, `pnpm-lock.yaml` / `pnpm-workspace.yaml`, `yarn.lock`, `package-lock.json` / `npm-shrinkwrap.json`.
+
+Version ranges such as `pnpm@^10.0.0` are accepted. Yarn major versions above 1 select Yarn Berry; pnpm major versions below 7 select pnpm 6. Invalid package JSON is ignored during detection. The command table lives in [`src/agents.rs`](src/agents.rs).
 
 <br>
 

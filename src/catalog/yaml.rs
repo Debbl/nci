@@ -14,12 +14,34 @@
 /// Insert `<pkg>: <version>` into the catalog named `catalog_name` in `content`
 /// and return the new file body. `catalog_name == "default"` targets the
 /// top-level `catalog:` block; anything else targets `catalogs.<name>`.
-pub fn insert_catalog_entry(
-    content: &str,
-    catalog_name: &str,
-    pkg: &str,
-    version: &str,
-) -> String {
+pub fn insert_catalog_entry(content: &str, catalog_name: &str, pkg: &str, version: &str) -> String {
+    // Keep comments and layout for block-style YAML. If flow maps, quoted
+    // names, or empty maps make a line edit ambiguous, use the parsed tree.
+    let mut expected: serde_yaml_ng::Value = serde_yaml_ng::from_str(content).unwrap_or_default();
+    let entries = if catalog_name == "default" {
+        &mut expected["catalog"]
+    } else {
+        &mut expected["catalogs"][catalog_name]
+    };
+    entries[pkg] = serde_yaml_ng::Value::String(version.to_string());
+    let quoted_pkg = if pkg.starts_with('@') {
+        format!("'{}'", pkg.replace('\'', "''"))
+    } else {
+        pkg.to_string()
+    };
+    let edited = insert_lines(content, catalog_name, &quoted_pkg, version);
+    if serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&edited)
+        .ok()
+        .as_ref()
+        == Some(&expected)
+    {
+        edited
+    } else {
+        serde_yaml_ng::to_string(&expected).expect("serialize catalog YAML")
+    }
+}
+
+fn insert_lines(content: &str, catalog_name: &str, pkg: &str, version: &str) -> String {
     let mut lines: Vec<String> = content.split('\n').map(String::from).collect();
     let trailing_newline = content.ends_with('\n');
     // `split` on a trailing '\n' yields an extra empty string; pop it so we
@@ -54,7 +76,8 @@ fn find_top_level_block(lines: &[String], key: &str) -> Option<usize> {
             return false;
         }
         let trimmed = l.trim_end();
-        trimmed == needle || trimmed.starts_with(&format!("{} ", needle))
+        trimmed == needle
+            || trimmed.starts_with(&format!("{} ", needle))
             || trimmed.starts_with(&format!("{}#", needle))
     })
 }
@@ -132,7 +155,10 @@ fn insert_named(lines: &mut Vec<String>, name: &str, pkg: &str, version: &str) {
         if let Some((child_start, _child_indent)) = find_child(lines, catalogs_start, name) {
             let inner_indent = detect_child_indent(lines, child_start, 4);
             let pos = insert_position(lines, child_start);
-            lines.insert(pos, format!("{}{}: {}", " ".repeat(inner_indent), pkg, version));
+            lines.insert(
+                pos,
+                format!("{}{}: {}", " ".repeat(inner_indent), pkg, version),
+            );
         } else {
             // Existing `catalogs:` block, but no entry for `name` yet.
             let pos = insert_position(lines, catalogs_start);
@@ -163,10 +189,7 @@ mod tests {
     fn insert_into_existing_default_catalog() {
         let input = "catalog:\n  react: ^18.0.0\n";
         let out = insert_catalog_entry(input, "default", "lodash", "^4.17.21");
-        assert_eq!(
-            out,
-            "catalog:\n  react: ^18.0.0\n  lodash: ^4.17.21\n"
-        );
+        assert_eq!(out, "catalog:\n  react: ^18.0.0\n  lodash: ^4.17.21\n");
     }
 
     #[test]
